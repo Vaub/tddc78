@@ -1,5 +1,6 @@
 .idea/
 
 *.swp
+*.o
 
 build/

@@ -2,16 +2,16 @@
 #define LAB1_BLUR_FILTER_H
 
 #include <blurfilter.h>
+
 #include "types.h"
+#include "shared_com.h"
 
-typedef struct ProcessorData {
-    int nb_pixels;
-    int* adress;
-} ProcessorData;
+void parallel_blur(const Filter* filter,
+                   const ImageProperties* prop,
+                   const int size, const pixel* buffer, pixel* blurred);
 
-void find_data_location(const pixel* buffer,
-                        const int local_size,
-                        const int rank, const int nb_cpu,
-                        ProcessorData* required_idx);
+void parallel_blur_v(const Filter* filter,
+                     const ImageProperties* prop,
+                     const int size, const pixel* buffer, pixel* blurred);
 
 #endif //LAB1_BLUR_FILTER_H

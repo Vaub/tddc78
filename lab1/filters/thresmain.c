@@ -28,14 +28,14 @@ int main (int argc, char ** argv) {
 
     printf("Has read the image, calling filter\n");
 
-    clock_gettime(CLOCK_REALTIME, &stime);
+    //clock_gettime(CLOCK_REALTIME, &stime);
 
     thresfilter(xsize, ysize, src);
 
-    clock_gettime(CLOCK_REALTIME, &etime);
+    //clock_gettime(CLOCK_REALTIME, &etime);
 
-    printf("Filtering took: %g secs\n", (etime.tv_sec  - stime.tv_sec) +
-	   1e-9*(etime.tv_nsec  - stime.tv_nsec)) ;
+    //printf("Filtering took: %g secs\n", (etime.tv_sec  - stime.tv_sec) +
+	//   1e-9*(etime.tv_nsec  - stime.tv_nsec)) ;
 
     /* write result */
     printf("Writing output file\n");

@@ -10,7 +10,7 @@ set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -Wall -Werror -std=c99")
 include_directories(filters)
 include_directories(SYSTEM ${MPI_INCLUDE_PATH})
 
-set(SOURCE_FILES "main.c" types.c blur_filter.c "filters/ppm.c" "filters/ppmio.c" "filters/gaussw.c" "filters/blurfilter.c" shared_com.c)
+set(SOURCE_FILES "main.c" types.c blur_filter.c "filters/ppm.c" "filters/ppmio.c" "filters/gaussw.c" shared_com.c mpi_env.c)
 
 add_executable(lab1 ${SOURCE_FILES})
 target_link_libraries(lab1 ${MPI_C_LIBRARIES})
