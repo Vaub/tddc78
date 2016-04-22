@@ -99,33 +99,39 @@ int main(int argc, char** argv) {
 
     int nb_pixels = img_prop.width * img_prop.height;
     int local_size = nb_pixels / env->nb_cpu;
-    pixel local_buffer[local_size];
+
+    pixel* local_buffer = malloc(local_size * sizeof(pixel));
     printf("Process %d processing %d pixels\n", env->rank, local_size);
 
     MPI_Scatter(work_buffer, local_size, MPI_PIXEL,
                 local_buffer, local_size, MPI_PIXEL,
                 ROOT_RANK, MPI_COMM_WORLD);
+    MPI_Barrier(MPI_COMM_WORLD);
 
     pixel src[local_size];
-    parallel_blur(&filter, &img_prop, local_size, local_buffer, src);
+    printf("Process %d from array %p to %p\n", env->rank, local_buffer, src);
+    parallel_blur(filter, img_prop, local_size, local_buffer, src);
 
-    if (env->nb_cpu > 1) { exec_finished(local_buffer, local_size); }
     printf("First pass done for %d\n", env->rank);
+    if (env->nb_cpu > 1) { exec_finished(local_buffer, local_size); }
     MPI_Barrier(MPI_COMM_WORLD);
 
 
     pixel src2[local_size];
-    parallel_blur_v(&filter, &img_prop, local_size, src, src2);
+    parallel_blur_v(filter, img_prop, local_size, src, src2);
 
     if (env->nb_cpu > 1) { exec_finished(src, local_size); }
     printf("Second pass done for %d\n", env->rank);
     MPI_Barrier(MPI_COMM_WORLD);
 
-
-    //int start_idx = rank * local_size;
+    pixel* out = NULL;
+    if (env->rank == ROOT_RANK) {
+        out = malloc(img_prop.width * img_prop.height * sizeof(pixel));
+    }
     MPI_Gather(src2, local_size, MPI_PIXEL,
-               work_buffer, local_size, MPI_PIXEL,
+               out, img_prop.width * img_prop.height, MPI_PIXEL,
                ROOT_RANK, MPI_COMM_WORLD);
+    MPI_Barrier(MPI_COMM_WORLD);
 
     if (env->rank == ROOT_RANK) {
         if(write_ppm (argv[3], img_prop.width, img_prop.height, (char *)work_buffer) != 0) {
