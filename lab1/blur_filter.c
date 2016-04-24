@@ -1,116 +1,104 @@
-#include <memory.h>
+#include <stdlib.h>
+#include <printf.h>
 #include "blur_filter.h"
+#include "shared_com.h"
 
-int find_offset(const int width, const int x, const int y) {
-    if ((width * y) + x >= 515788) {
-        printf("Wtf is this with x: %d, y: %d , width is %d\n", x, y, width);
-    }
-
-    return (width * y) + x;
+int get_img_size(const Image* img) {
+    return img->width * img->height;
 }
 
-void parallel_blur(const Filter filter, const ImageProperties prop,
-                   const int buffer_size, const pixel* buffer, pixel* blurred) {
-    int start_idx = MPI_ENV.rank * buffer_size;
-    int width = prop.width;
+void do_x_pass(const Pixel* buffer,
+               const ImageChunk* chunk,
+               const Image* image, const Filter* filter,
+               Pixel* output_buffer) {
 
-    printf("Working from %d with %d pixels\n", start_idx, buffer_size);
+    int output_idx = 0;
     double r,g,b,n,w;
-    int x,y;
 
-    //pixel tmp[size];
-    for (int i = 0; i < buffer_size; ++i) {
-        int offset = start_idx + i;
-        x = (offset % width);
-        y = (offset / width);
+    printf("Going from %d to %d [from: %d]\n", chunk->start_offset, chunk->start_offset + chunk->nb_pix_to_treat, chunk->img_idx);
+    for (int i = chunk->start_offset; i < chunk->start_offset + chunk->nb_pix_to_treat; ++i) {
 
-        w = filter.weights[0];
-        pixel pix = get_pixel(offset,buffer,buffer_size);
+        int x = (chunk->img_idx + i) % image->width;
+        //int y = (chunk->img_idx + i) / image->width;
+        int x2;
 
-        r = w * pix.r;
-        g = w * pix.g;
-        b = w * pix.b;
+        w = filter->weights[0];
+        r = w * buffer[i].r;
+        g = w * buffer[i].g;
+        b = w * buffer[i].b;
         n = w;
 
-        for (int wi = 1; wi < filter.radius; ++wi) {
-            w = filter.weights[wi];
+        for (int wi = 1; wi < filter->radius; ++wi) {
+            w = filter->weights[wi];
 
-            if (x - wi >= 0) {
-                pix = get_pixel(find_offset(width, x - wi, y), buffer, buffer_size);
-                r += w * pix.r;
-                g += w * pix.g;
-                b += w * pix.b;
+            x2 = x - wi;
+            if (x2 >= 0) {
+                r += w * buffer[i - wi].r;
+                g += w * buffer[i - wi].g;
+                b += w * buffer[i - wi].b;
                 n += w;
             }
 
-            if (x + wi < width) {
-                pix = get_pixel(find_offset(width, x + wi, y), buffer, buffer_size);
-                r += w * pix.r;
-                g += w * pix.g;
-                b += w * pix.b;
+            x2 = x + wi;
+            if (x2 < image->width) {
+                r += w * buffer[i + wi].r;
+                g += w * buffer[i + wi].g;
+                b += w * buffer[i + wi].b;
                 n += w;
             }
 
         }
 
-        pixel blur_pix = { r / n, g / n, b / n };
-        //printf(":(\n");
-        blurred[find_offset(width, x, y)] = blur_pix;
+        Pixel pix = { r / n, g / n, b /n };
+        output_buffer[output_idx++] = pix;
     }
 
-    //memcpy(tmp, blurred, buffer_size);
 }
 
-void parallel_blur_v(const Filter filter, const ImageProperties prop,
-                     const int buffer_size, const pixel* buffer, pixel* blurred) {
-    int start_idx = MPI_ENV.rank * buffer_size;
 
-    printf("Working from %d with %d pixels\n", start_idx, buffer_size);
+void do_y_pass(const Pixel* buffer,
+               const ImageChunk* chunk,
+               const Image* image, const Filter* filter,
+               Pixel* output_buffer) {
 
+    int output_idx = 0;
     double r,g,b,n,w;
-    int x,y;
 
-    int width = prop.width;
-    printf("Check with offset %d and properties w: %d, h: %d\n", start_idx, prop.width, prop.height);
+    printf("Going from %d to %d [from: %d]\n", chunk->start_offset, chunk->start_offset + chunk->nb_pix_to_treat, chunk->img_idx);
+    for (int i = chunk->start_offset; i < chunk->start_offset + chunk->nb_pix_to_treat; ++i) {
 
-    //pixel tmp[size];
-    for (int i = 0; i < buffer_size; ++i) {
-        int offset = start_idx + i;
-        x = (offset % width);
-        y = (offset / width);
+        int y = (chunk->img_idx + i) % image->height;
+        int y2;
 
-        w = filter.weights[0];
-        pixel pix = get_pixel(offset,buffer,buffer_size);
-
-        r = w * pix.r;
-        g = w * pix.g;
-        b = w * pix.b;
+        w = filter->weights[0];
+        r = w * buffer[i].r;
+        g = w * buffer[i].g;
+        b = w * buffer[i].b;
         n = w;
 
-        for (int wi = 1; wi < filter.radius; ++wi) {
-            w = filter.weights[wi];
+        for (int wi = 1; wi < filter->radius; ++wi) {
+            w = filter->weights[wi];
 
-            if (y - wi >= 0) {
-                pix = get_pixel(find_offset(width, x, y - wi), buffer, buffer_size);
-                r += w * pix.r;
-                g += w * pix.g;
-                b += w * pix.b;
+            y2 = y - wi;
+            if (y2 >= 0) {
+                r += w * buffer[i - wi].r;
+                g += w * buffer[i - wi].g;
+                b += w * buffer[i - wi].b;
                 n += w;
             }
 
-            if (y + wi < prop.height) {
-                pix = get_pixel(find_offset(width, x, y + wi), buffer, buffer_size);
-                r += w * pix.r;
-                g += w * pix.g;
-                b += w * pix.b;
+            y2 = y + wi;
+            if (y2 < image->height) {
+                r += w * buffer[i + wi].r;
+                g += w * buffer[i + wi].g;
+                b += w * buffer[i + wi].b;
                 n += w;
             }
 
         }
 
-        pixel blur_pix = { r / n, g / n, b / n };
-        blurred[find_offset(prop.width, x, y)] = blur_pix;
+        Pixel pix = { r / n, g / n, b /n };
+        output_buffer[output_idx++] = pix;
     }
 
-    //memcpy(tmp, blurred, buffer_size);
 }

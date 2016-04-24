@@ -1,22 +1,27 @@
 #ifndef LAB1_MPI_ENV_H
 #define LAB1_MPI_ENV_H
 
-#include <mpi.h>
-#include "types.h"
+typedef struct MpiTypes {
+    MPI_Datatype pixel;
+    MPI_Datatype image;
+    MPI_Datatype filter;
+    MPI_Datatype chunk;
+} MpiTypes;
 
-typedef struct ProcessEnv {
+typedef struct MpiEnv {
+    MPI_Comm comm;
+
     int rank;
     int nb_cpu;
-} ProcessEnv;
 
-ProcessEnv MPI_ENV;
+    MpiTypes types;
+} MpiEnv;
 
-MPI_Datatype MPI_PIXEL;
-MPI_Datatype MPI_IMG_PROP;
-MPI_Datatype MPI_FILTER;
+#define ROOT_RANK 0
 
-void mpi_init(int argc, char** argv);
+void init_mpi(int argc, char** argv);
+void close_mpi();
 
-void mpi_finalize();
+const MpiEnv* get_env();
 
 #endif //LAB1_MPI_ENV_H

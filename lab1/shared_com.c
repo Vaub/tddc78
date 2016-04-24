@@ -1,80 +1,88 @@
-#include <stdbool.h>
-#include <stdlib.h>
+#include <mpi.h>
+#include <memory.h>
+#include <assert.h>
+#include <printf.h>
+
 #include "shared_com.h"
+#include "mpi_env.h"
+#include "types.h"
 
-static int recv_waiting = 0;
-static int receive_buffer;
-static MPI_Request receive_request;
+#define REQUEST_PIXEL 10
+#define REQUEST_FINISHED 20
 
-void exec_finished(const pixel* local_buffer, const int local_size) {
-    ProcessEnv env = MPI_ENV;
-
-    int end_message = TREATMENT_FINISHED;
-    MPI_Request end_requests[env.nb_cpu];
-    for (int i = 0; i < env.nb_cpu; ++i) {
-        MPI_Send(&end_message, 1, MPI_INT, i, PIXEL_REQ_FLAG, MPI_COMM_WORLD);
-        MPI_Send(&end_message, 1, MPI_INT, i, END_TREATMENT, MPI_COMM_WORLD);
-        MPI_Irecv(&end_message, 1, MPI_INT, i, END_TREATMENT, MPI_COMM_WORLD, &end_requests[i]);
-    }
-
-    int cpu_over = 0;
-    do {
-        process_messages(local_buffer, local_size);
-
-        cpu_over = 0;
-        int flag;
-        for (int i = 0; i < env.nb_cpu; ++i) {
-            MPI_Test(&end_requests[i], &flag, MPI_STATUS_IGNORE);
-            cpu_over += (flag == 0) ? 0 : 1;
-        }
-    } while (cpu_over != env.nb_cpu);
-
-}
-
-void process_messages(const pixel* local_buffer, const int local_size) {
-    int flag;
-    MPI_Status status;
-
-    if (recv_waiting) {
-        MPI_Test(&receive_request, &flag, &status);
-        recv_waiting = (flag == 0);
-
-        if (!recv_waiting && receive_buffer != TREATMENT_FINISHED) {
-            //printf("Receive req %d [%d -> %d] \n", receive_buffer, status.MPI_SOURCE, MPI_ENV.rank);
-            int local_idx = receive_buffer % local_size;
-            MPI_Send(&local_buffer[local_idx], 1, MPI_PIXEL, status.MPI_SOURCE, PIXEL_SENT_FLAG, MPI_COMM_WORLD);
-        }
-
-    } else {
-        recv_waiting = 1;
-        MPI_Irecv(&receive_buffer, 1, MPI_INT, MPI_ANY_SOURCE, PIXEL_REQ_FLAG, MPI_COMM_WORLD, &receive_request);
-    }
-}
-
-pixel get_pixel(int index, const pixel* local_buffer, const int local_size) {
-    int cpu_to_call = index / local_size;
-    if (cpu_to_call == MPI_ENV.rank) {
-        return local_buffer[index % local_size];
-    }
-
-    if (cpu_to_call >= MPI_ENV.nb_cpu) {
-        printf("Wut? cpu %d, for idx %d with size %d\n", MPI_ENV.rank, index, local_size);
-    }
-
-    pixel pixel;
+typedef struct receive_request {
     MPI_Request request;
+    int is_waiting;
+} RecvReq;
 
-    //printf("Requesting\t%d [%d -> %d]\n", index, MPI_ENV.rank, cpu_to_call);
-    MPI_Send(&index, 1, MPI_INT, cpu_to_call, PIXEL_REQ_FLAG, MPI_COMM_WORLD);
-    MPI_Irecv(&pixel, 1, MPI_PIXEL, cpu_to_call, PIXEL_SENT_FLAG, MPI_COMM_WORLD, &request);
+void send_pixels(const Pixel* img_buffer, const int img_size) {
+    MpiEnv env = *get_env();
 
-    int flag = 0;
+    MPI_Request end_requests[env.nb_cpu];
+    MPI_Request pixels_requests[env.nb_cpu];
+
+    int index_requested[env.nb_cpu];
+
+    int tmp;
+    for (int i = 1; i < env.nb_cpu; ++i) {
+        MPI_Irecv(&tmp, 1, MPI_INT, i, REQUEST_FINISHED, env.comm, &end_requests[i]);
+    }
+
+    int is_started = 0;
+    int is_finished = 0;
     do {
-        process_messages(local_buffer, local_size);
-        MPI_Test(&request, &flag, MPI_STATUS_IGNORE);
+        int recv_flag = 0;
 
-    } while (flag != 1);
+        MPI_Request send;
+        MPI_Status status;
 
-    //printf("Got pixel %d [%d -> %d]\n", index, cpu_to_call, MPI_ENV.rank);
+        for (int i = 1; i < env.nb_cpu && is_started; ++i) {
+
+            MPI_Test(&pixels_requests[i], &recv_flag, &status);
+
+            if (recv_flag) {
+                MPI_Isend(&img_buffer[index_requested[i]], 1, env.types.pixel, status.MPI_SOURCE, REQUEST_PIXEL,env.comm, &send);
+                MPI_Request_free(&send);
+            }
+            MPI_Request_free(&pixels_requests[i]);
+        }
+        is_started = 1;
+
+        for (int i = 1; i < env.nb_cpu; ++i) {
+            MPI_Irecv(&index_requested[i], 1, MPI_INT, i, REQUEST_PIXEL, env.comm, &pixels_requests[i]);
+        }
+
+        MPI_Testall(env.nb_cpu - 1, &end_requests[1], &is_finished, MPI_STATUS_IGNORE);
+    } while (is_finished);
+}
+
+Pixel get_pixel(const int index,
+                const Pixel* local_chunk, const int chunk_size) {
+    Pixel pixel;
+    MpiEnv env = *get_env();
+
+    if (env.rank == ROOT_RANK) {
+        return local_chunk[index];
+    }
+
+    int local_start_idx = env.rank * chunk_size;
+    int in_local =
+            index >= local_start_idx &&
+            index < local_start_idx + chunk_size;
+
+    if (in_local) {
+        return local_chunk[index - local_start_idx];
+    }
+
+    MPI_Send(&index, 1, MPI_INT, ROOT_RANK, REQUEST_PIXEL, env.comm);
+    MPI_Recv(&pixel, 1, env.types.pixel, ROOT_RANK, REQUEST_PIXEL, env.comm, MPI_STATUS_IGNORE);
+
     return pixel;
+}
+
+void finished_treatment() {
+    int tmp = 0;
+    MPI_Send(&tmp, 1, MPI_INT, ROOT_RANK, REQUEST_FINISHED, get_env()->comm);
+
+    printf("Finished for cpu %d\n", get_env()->rank);
 }
