@@ -22,7 +22,7 @@ int read_ppm (const char * fname,
   if (fname == NULL) fname = "\0";
   fp = fopen (fname, "r");
 
-  printf("\tFile opened\n");
+  //printf("\tFile opened\n");
   if (fp == NULL) {
     fprintf (stderr, "read_ppm failed to open %s: %s\n", fname,
 	     strerror (errno));
@@ -42,7 +42,7 @@ int read_ppm (const char * fname,
     return 4;
  };
 
-  printf("\tImage ready\n");
+  //printf("\tImage ready\n");
   if (strncmp(ftype, ctype, 2) == 0) {
     if (fread (data, sizeof (char), *xpix * *ypix * 3, fp) != 
 	*xpix * *ypix * 3) {
@@ -53,13 +53,13 @@ int read_ppm (const char * fname,
     fprintf (stderr, "Wrong file format: %s\n", ftype);
   }
 
-  printf("\tRead done\n");
+  //printf("\tRead done\n");
   if (fclose (fp) == EOF) {
     perror ("Close failed");
     return 3;
   }
 
-  printf("\tFile closed\n");
+  //printf("\tFile closed\n");
   return 0;
 
 }
