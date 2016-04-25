@@ -65,7 +65,7 @@ void open_image(int argc, char** argv, Image* image, Filter* filter, Pixel* buff
  *
  *  A full gaussian filter will require an x and y pass to work
  */
-void distribute_image(const Pixel* buffer, const int buffer_size,
+void distribute_image(Pixel* buffer, const int buffer_size,
                       const int row_size, const Filter* filter,
                       Pixel* output) {
     MpiEnv env = *get_env();
