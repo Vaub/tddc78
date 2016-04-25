@@ -21,16 +21,6 @@ typedef struct Filter {
 
 int get_img_size(const Image* img);
 
-void do_x_pass(const Pixel* buffer,
-               const ImageChunk* chunk,
-               const Image* image, const Filter* filter,
-               Pixel* output_buffer);
-
-void do_y_pass(const Pixel* buffer,
-               const ImageChunk* chunk,
-               const Image* image, const Filter* filter,
-               Pixel* output_buffer);
-
 void do_blur_pass(const Pixel *buffer,
                   const ImageChunk *chunk, const Filter *filter,
                   const int row_length, Pixel *output);

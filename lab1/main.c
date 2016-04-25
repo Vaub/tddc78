@@ -1,6 +1,7 @@
 #include <stdio.h>
 #include <mpi.h>
 #include <stdlib.h>
+#include <memory.h>
 
 #include "blur_filter.h"
 #include "mpi_env.h"
@@ -16,6 +17,13 @@
 void exit_program(int code) {
     close_mpi();
     exit(code);
+}
+
+void flip_axis(int row_size, const int buffer_size, Pixel* buffer, Pixel* out) {
+    for (int i = 0; i < buffer_size; ++i) {
+        int x = i % row_size, y = i / row_size;
+        out[row_size * x + y] = buffer[i];
+    }
 }
 
 void distribute_image(const Pixel* buffer, const int buffer_size,
@@ -84,7 +92,6 @@ void distribute_image(const Pixel* buffer, const int buffer_size,
     MPI_Gatherv(pass_output, chunk.nb_pix_to_treat, env.types.pixel,
                 output, to_receive_chunk_size, to_receive_offset, env.types.pixel,
                 ROOT_RANK, env.comm);
-    MPI_Barrier(env.comm);
 }
 
 int main(int argc, char** argv) {
@@ -94,7 +101,7 @@ int main(int argc, char** argv) {
     //printf("Process %d out of %d loaded\n", env.rank, env.nb_cpu);
 
     Pixel* work_buffer = env.rank == ROOT_RANK ?
-                         malloc(MAX_RADIUS * sizeof(*work_buffer)) : NULL;
+                         malloc(MAX_PIXELS * sizeof(*work_buffer)) : NULL;
 
     Image image;
     Filter filter;
@@ -134,165 +141,29 @@ int main(int argc, char** argv) {
 
     int image_size = get_img_size(&image);
 
-    // Old working
-    /* int counts[env.nb_cpu];
-    int recv_counts[env.nb_cpu];
-    int displs[env.nb_cpu];
-    int recv_displs[env.nb_cpu];
-
-    int local_size = get_img_size(&image) / env.nb_cpu;
-    int reminder = get_img_size(&image) % env.nb_cpu;
-    int local_buffer_max = (filter.radius * 2) + (local_size + reminder);
-
-    if (env.rank == ROOT_RANK) {
-        int img_idx = 0;
-        int recv_idx = 0;
-
-        ImageChunk chunk;
-        for (int i = 0; i < env.nb_cpu; ++i) {
-            int send_size = reminder > 0 ? local_size + 1 : local_size;
-            --reminder;
-
-            int send_buffer_size = send_size;
-            chunk.img_idx = img_idx;
-            chunk.nb_pix_to_treat = send_size;
-
-            int x_start = (img_idx % image.width);
-            int x_end = ((img_idx + send_size - 1) % image.width);
-
-            int start_radius = filter.radius > x_start ? x_start : filter.radius;
-            int end_radius = filter.radius + x_end > image.width - 1 ? (image.width - 1) - x_end : filter.radius;
-
-            chunk.img_idx -= start_radius;
-            chunk.start_offset = img_idx - chunk.img_idx;
-            send_buffer_size += start_radius + end_radius;
-
-            counts[i] = send_buffer_size;
-            recv_counts[i] = chunk.nb_pix_to_treat;
-            displs[i] = chunk.img_idx;
-            recv_displs[i] = recv_idx;
-
-            //printf("CPU %d will write %d pixels from %d\n", i, chunk.nb_pix_to_treat, recv_idx);
-            recv_idx += chunk.nb_pix_to_treat;
-
-
-
-            img_idx += send_size;
-            MPI_Send(&chunk, 1, env.types.chunk, i, 0, env.comm);
-        }
-    }
-
-    MPI_Barrier(env.comm);
-
-    ImageChunk local_chunk;
-    MPI_Recv(&local_chunk, 1, env.types.chunk, ROOT_RANK, 0, env.comm, MPI_STATUS_IGNORE);
-
-    Pixel local_buffer[local_buffer_max];
-    MPI_Scatterv(work_buffer, counts, displs, env.types.pixel,
-                 local_buffer, local_buffer_max, env.types.pixel,
-                 ROOT_RANK, env.comm);
-
-    Pixel local_output[local_chunk.nb_pix_to_treat];
-    do_x_pass(local_buffer, &local_chunk, &image, &filter, local_output);
-
-    Pixel src[get_img_size(&image)];
-    MPI_Gatherv(local_output, local_chunk.nb_pix_to_treat, env.types.pixel,
-                src, recv_counts, recv_displs, env.types.pixel,
-                ROOT_RANK, env.comm);
-
-    MPI_Barrier(env.comm);*/
-
-    Pixel* output = env.rank == ROOT_RANK ?
-                    malloc(image_size * sizeof(Pixel)) : NULL;
-    distribute_image(work_buffer, image_size, image.width, &filter, output);
+    Pixel* x_pass_output = env.rank == ROOT_RANK ?
+                           malloc(image_size * sizeof(*x_pass_output)) : NULL;
+    distribute_image(work_buffer, image_size, image.width, &filter, x_pass_output);
 
     if (env.rank == ROOT_RANK) {
         work_buffer = malloc(image_size * sizeof(*work_buffer));
-        for (int i = 0; i < image_size; ++i) {
-            int x = i % image.width;
-            int y = i / image.width;
-            work_buffer[image.height * x + y] = output[i];
-        }
+        flip_axis(image.height, image_size, x_pass_output, work_buffer);
     }
 
-    output = env.rank == ROOT_RANK ?
-             malloc(image_size * sizeof(Pixel)) : NULL;
-    distribute_image(work_buffer, image_size, image.height, &filter, output);
+    Pixel* y_pass_output = env.rank == ROOT_RANK ?
+                           malloc(image_size * sizeof(*y_pass_output)) : NULL;
+    distribute_image(work_buffer, image_size, image.height, &filter, y_pass_output);
 
     if (env.rank == ROOT_RANK) {
         work_buffer = malloc(image_size * sizeof(*work_buffer));
-        for (int i = 0; i < image_size; ++i) {
-            int x = i / image.height;
-            int y = i % image.height;
-            work_buffer[image.width * y + x] = output[i];
-        }
+        flip_axis(image.width, image_size, y_pass_output, work_buffer);
     }
-
-    // Old working
-    /*if (env.rank == ROOT_RANK) {
-        int img_idx = 0;
-        int recv_idx = 0;
-
-        ImageChunk chunk;
-        for (int i = 0; i < env.nb_cpu; ++i) {
-            int send_size = reminder > 0 ? local_size + 1 : local_size;
-            --reminder;
-
-            int send_buffer_size = send_size;
-            chunk.img_idx = img_idx;
-            chunk.nb_pix_to_treat = send_size;
-
-            int y_start = (img_idx % image.height);
-            int y_end = ((img_idx + send_size - 1) % image.height);
-
-            int start_radius = filter.radius > y_start ? y_start : filter.radius;
-            int end_radius = filter.radius + y_end > image.height - 1 ? (image.height - 1) - y_end : filter.radius;
-
-            chunk.img_idx -= start_radius;
-            chunk.start_offset = img_idx - chunk.img_idx;
-            send_buffer_size += start_radius + end_radius;
-
-            counts[i] = send_buffer_size;
-            recv_counts[i] = chunk.nb_pix_to_treat;
-            displs[i] = chunk.img_idx;
-            recv_displs[i] = recv_idx;
-
-            //printf("CPU %d will write %d pixels from %d\n", i, chunk.nb_pix_to_treat, recv_idx);
-            recv_idx += chunk.nb_pix_to_treat;
-
-
-
-            img_idx += send_size;
-            MPI_Send(&chunk, 1, env.types.chunk, i, 0, env.comm);
-        }
-    }
-
-    MPI_Barrier(env.comm);
-    MPI_Recv(&local_chunk, 1, env.types.chunk, ROOT_RANK, 0, env.comm, MPI_STATUS_IGNORE);
-
-    MPI_Scatterv(y_axis, counts, displs, env.types.pixel,
-                 local_buffer, local_buffer_max, env.types.pixel,
-                 ROOT_RANK, env.comm);
-
-    do_y_pass(local_buffer, &local_chunk, &image, &filter, local_output);
-
-    MPI_Gatherv(local_output, local_chunk.nb_pix_to_treat, env.types.pixel,
-                src, recv_counts, recv_displs, env.types.pixel,
-                ROOT_RANK, env.comm);*/
 
     if (env.rank == ROOT_RANK) { t_end = MPI_Wtime(); }
-    MPI_Barrier(env.comm);
 
-
-
-    //printf("Hmm...\n");
     if (env.rank == ROOT_RANK) {
-        //printf("RESULTS: %d pixel in %1.2f seconds with %d cpu [radius = %d].\n",
-        //       get_img_size(&image), (t_end-t_start), env.nb_cpu, filter.radius);
-
-        //printf("Writing output\n");
         printf("%d,%1.2f,%d,%d\n",
-               env.nb_cpu, t_end - t_start, filter.radius, get_img_size(&image));
+               env.nb_cpu, t_end - t_start, filter.radius, image_size);
         if(write_ppm (argv[3], image.width, image.height, (char *)work_buffer) != 0) {
             exit_program(1);
         }
