@@ -13,6 +13,7 @@ void do_blur_pass(const Pixel *buffer,
     int last_offset = chunk->start_offset + chunk->nb_pix_to_treat;
     for (int i = chunk->start_offset; i < last_offset; ++i) {
 
+        // Find out position in the memory "rows" (x or y depending on the pass)
         int pos = (chunk->img_idx + i) % row_length;
         int pos2;
 
@@ -22,6 +23,7 @@ void do_blur_pass(const Pixel *buffer,
         b = w * buffer[i].b;
         n = w;
 
+        // For this "row", apply the filter
         for (int wi = 1; wi < filter->radius; ++wi) {
             w = filter->weights[wi];
 

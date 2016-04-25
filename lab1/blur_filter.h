@@ -21,6 +21,10 @@ typedef struct Filter {
 
 int get_img_size(const Image* img);
 
+/**
+ * Blurs the pixels by row or columns depending on their layout in memory
+ * for a given chunk of an image and a blur filter
+ */
 void do_blur_pass(const Pixel *buffer,
                   const ImageChunk *chunk, const Filter *filter,
                   const int row_length, Pixel *output);

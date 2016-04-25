@@ -1,11 +1,9 @@
 #include <stdio.h>
 #include <mpi.h>
 #include <stdlib.h>
-#include <memory.h>
 
 #include "blur_filter.h"
 #include "mpi_env.h"
-#include "types.h"
 #include "filters/gaussw.h"
 #include "filters/ppmio.h"
 
@@ -19,13 +17,23 @@ void exit_program(int code) {
     exit(code);
 }
 
-void flip_axis(int row_size, const int buffer_size, const Pixel* buffer, Pixel* out) {
+/**
+ * Flips an image from x <-> y in memory
+ * For example, for w = 3, h = 4 and layed out as row:
+ *      flip_axis(w, h, 000 100 110 101, out) =>
+ *          out = 0111 0010 0001
+ */
+void flip_axis(const int row_size, const int column_size, const Pixel* buffer, Pixel* out) {
+    const int buffer_size = row_size * column_size;
     for (int i = 0; i < buffer_size; ++i) {
         int x = i % row_size, y = i / row_size;
-        out[row_size * x + y] = buffer[i];
+        out[column_size * x + y] = buffer[i];
     }
 }
 
+/**
+ * Reads an image and blur parameters from params in argc and argv
+ */
 void open_image(int argc, char** argv, Image* image, Filter* filter, Pixel* buffer) {
     if (argc != 4) {
         fprintf(stderr, "Blur: radius file_in file_out\n");
@@ -49,6 +57,14 @@ void open_image(int argc, char** argv, Image* image, Filter* filter, Pixel* buff
     }
 }
 
+/**
+ * Take an image and apply a gaussian blur on a particular axis using all available MPI process
+ * If you want to do a blur pass:
+ *      x coord: buffer is layed out using the rows and row_size = width
+ *      y coord: buffer is layed out using the columns and row_size = height
+ *
+ *  A full gaussian filter will require an x and y pass to work
+ */
 void distribute_image(const Pixel* buffer, const int buffer_size,
                       const int row_size, const Filter* filter,
                       Pixel* output) {
@@ -57,27 +73,30 @@ void distribute_image(const Pixel* buffer, const int buffer_size,
     ImageChunk chunk;
     int local_chunk_size;
 
-    int* to_send_chunk_sizes = malloc(env.nb_cpu * sizeof(*to_send_chunk_sizes));
-    int* to_send_offsets = malloc(env.nb_cpu * sizeof(*to_send_offsets));
+    // MPI Scatter/Gather counts & displacements
+    int to_send_chunk_sizes[env.nb_cpu];
+    int to_send_offsets[env.nb_cpu];
+    int to_receive_chunk_sizes[env.nb_cpu];
+    int to_receive_offsets[env.nb_cpu];
 
-    int* to_receive_chunk_sizes = malloc(env.nb_cpu * sizeof(*to_receive_chunk_sizes));
-    int* to_receive_offsets = malloc(env.nb_cpu * sizeof(*to_receive_offsets));
-
-    const int chunk_size = buffer_size / env.nb_cpu;
+    const int avg_chunk_size = buffer_size / env.nb_cpu;
 
     if (env.rank == ROOT_RANK) {
         int chunk_reminder = buffer_size % env.nb_cpu;
 
-        int current_idx = 0;
-        int current_to_recv_offset = 0;
+        int current_idx = 0; // Current image buffer idx
+        int current_to_recv_offset = 0; // For Gatherv count
         for (int cpu = 0; cpu < env.nb_cpu; ++cpu) {
-            int nb_pix_to_treat = chunk_size
+            // Buffer size that will be blurred by the process [cpu]
+            int nb_pix_to_treat = avg_chunk_size
                                   + (chunk_reminder > 0 ? 1 : 0);
-            chunk_reminder -= 1;
+            chunk_reminder -= 1; // Since size % nb_cpu < nb_cpu, we can add one pixel to reminder
 
+            // Where are we in x or y (depends of the buffer orientation)
             int row_pos_start = current_idx % row_size;
             int row_pos_end = (current_idx + (row_size - 1)) % row_size;
 
+            // Number of pixels before and after our buffer that will be blurred to cover the radius
             int pixels_before = min(filter->radius, row_pos_start),
                 pixels_after  = min(filter->radius, (row_size - 1) - row_pos_end);
 
@@ -85,13 +104,13 @@ void distribute_image(const Pixel* buffer, const int buffer_size,
             chunk.start_offset = pixels_before;
             chunk.nb_pix_to_treat = nb_pix_to_treat;
 
+            // Computing for Scatterv/Gatherv
             to_send_chunk_sizes[cpu] = nb_pix_to_treat + pixels_before + pixels_after;
             to_send_offsets[cpu] = chunk.img_idx;
-
             to_receive_chunk_sizes[cpu] = chunk.nb_pix_to_treat;
             to_receive_offsets[cpu] = current_to_recv_offset;
-            current_to_recv_offset += chunk.nb_pix_to_treat;
 
+            current_to_recv_offset += chunk.nb_pix_to_treat;
             current_idx += chunk.nb_pix_to_treat;
 
             MPI_Send(&chunk, 1, env.types.chunk, cpu, 0, env.comm);
@@ -107,6 +126,7 @@ void distribute_image(const Pixel* buffer, const int buffer_size,
                  local_chunk_buffer, local_chunk_size, env.types.pixel,
                  ROOT_RANK, env.comm);
 
+    // Parallel blur
     Pixel* pass_output = malloc(chunk.nb_pix_to_treat * sizeof(*pass_output));
     do_blur_pass(local_chunk_buffer, &chunk, filter, row_size, pass_output);
 
@@ -158,13 +178,13 @@ int main(int argc, char** argv) {
     // Blur pass for X
     distribute_image(work_buffer, image_size, image.width, &filter, x_pass_buffer);
     if (env.rank == ROOT_RANK) {
-        flip_axis(image.height, image_size, x_pass_buffer, y_flip_output);
+        flip_axis(image.width, image.height, x_pass_buffer, y_flip_output);
     }
 
     // Blur pass for Y
     distribute_image(y_flip_output, image_size, image.height, &filter, y_pass_buffer);
     if (env.rank == ROOT_RANK) {
-        flip_axis(image.width, image_size, y_pass_buffer, x_flip_output);
+        flip_axis(image.height, image.width, y_pass_buffer, x_flip_output);
     }
 
     // Writing program output (filtered image)
