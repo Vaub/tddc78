@@ -3,7 +3,13 @@ project(lab1)
 
 find_package(MPI)
 
-set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -Wall -Werror -std=c99")
+if (${CMAKE_C_COMPILER} MATCHES "icc.*$")
+    set(MPI_COMP_FLAGS -Nmpi)
+else ()
+    set(MPI_COMP_FLAGS "")
+endif ()
+
+set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -Wall -Werror ${MPI_COMP_FLAGS} -std=c99")
 
 # include_directories(${CMAKE_CURRENT_SOURCE_DIR}/filters)
 # include_directories(filters)

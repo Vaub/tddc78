@@ -6,4 +6,6 @@
 *.swp
 *.o
 
+*.xlsx
+
 build/
