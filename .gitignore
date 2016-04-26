@@ -5,6 +5,12 @@
 *.ppm
 *.swp
 *.o
+*~
+
+# CMake
+CMakeFiles/
+*.cmake
+Makefile
 
 *.xlsx
 
