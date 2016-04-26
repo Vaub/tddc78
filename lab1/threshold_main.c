@@ -32,6 +32,73 @@ void open_image(int argc, char** argv, Image* image, Pixel* buffer) {
     }
 }
 
+void send_chunk_sizes(int image_size, int* chunk_sizes, int* offsets){
+
+    MpiEnv env = *get_env();
+    const int avg_chunk_size = image_size / env.nb_cpu;
+
+    if(env.rank == ROOT_RANK){
+	int chunk_reminder = image_size % env.nb_cpu;
+        int offset = 0;
+
+        for(int cpu = 0; cpu < env.nb_cpu; ++cpu){
+
+  	    // Buffer size that will be blurred by the process [cpu]
+            int nb_pix_to_treat = avg_chunk_size
+                                  + (chunk_reminder > 0 ? 1 : 0);
+
+            chunk_reminder -= 1; // Since size % nb_cpu < nb_cpu, we can add one pixel to reminder
+
+   	    chunk_sizes[cpu] = nb_pix_to_treat;	
+            offsets[cpu] = offset;
+
+            offset += nb_pix_to_treat;
+		
+            MPI_Request request;
+            MPI_Isend(&chunk_sizes[cpu], 1, MPI_INT, cpu, 1, env.comm, &request);
+        }       
+    }
+}
+
+void do_thresholding(const int image_size, Pixel* work_buffer, Pixel* output){
+    MpiEnv env = *get_env();
+    int local_chunk_size;
+
+    // MPI Scatter/Gather counts & displacements
+    int chunk_sizes[env.nb_cpu];
+    int offsets[env.nb_cpu];
+
+    send_chunk_sizes(image_size, chunk_sizes, offsets);
+
+    MPI_Recv(&local_chunk_size, 1, MPI_INT, 0, 1, env.comm, MPI_STATUS_IGNORE);
+    
+    Pixel* local_chunk_buffer = malloc(local_chunk_size * sizeof(*local_chunk_buffer));
+
+    MPI_Scatterv(work_buffer, chunk_sizes, offsets, env.types.pixel,
+                 local_chunk_buffer, local_chunk_size, env.types.pixel,
+                 ROOT_RANK, env.comm);
+
+    unsigned int global_sum = 0, local_sum = 0, threshold = 0;
+    Pixel* pass_output = malloc(local_chunk_size * sizeof(*pass_output));
+
+    // Sum r,g and b values locally
+    for(int i = 0; i < local_chunk_size; ++i){
+    	local_sum += (unsigned int)(local_chunk_buffer[i].r + local_chunk_buffer[i].g + local_chunk_buffer[i].b);
+    }
+    
+    // Combine all local sums and send the result to all processes
+    MPI_Allreduce(&local_sum, &global_sum, 1, MPI_UNSIGNED, MPI_SUM, env.comm);
+
+    threshold = global_sum / image_size;
+    
+    thresfilter(threshold, local_chunk_size, local_chunk_buffer, pass_output);  	
+
+    MPI_Gatherv(pass_output, local_chunk_size, env.types.pixel,
+                output, chunk_sizes, offsets, env.types.pixel,
+                ROOT_RANK, env.comm);
+}
+
+
 int main(int argc, char** argv) {
     init_mpi(argc, argv);
     MpiEnv env = *get_env();
@@ -50,61 +117,11 @@ int main(int argc, char** argv) {
 
      // Broadcasting of image
     MPI_Bcast(&image, 1, env.types.image, ROOT_RANK, env.comm);
+
     int image_size = get_img_size(&image);
-  
-    int local_chunk_size;
-    const int avg_chunk_size = image_size / env.nb_cpu;
-
-    // MPI Scatter/Gather counts & displacements
-    int chunk_sizes[env.nb_cpu];
-    int offsets[env.nb_cpu];
-
-    if(env.rank == ROOT_RANK){
-	int chunk_reminder = image_size % env.nb_cpu;
-        int offset = 0;
-
-        for(int cpu = 0; cpu < env.nb_cpu; ++cpu){
-  	    // Buffer size that will be blurred by the process [cpu]
-            int nb_pix_to_treat = avg_chunk_size
-                                  + (chunk_reminder > 0 ? 1 : 0);
-            chunk_reminder -= 1; // Since size % nb_cpu < nb_cpu, we can add one pixel to reminder
-
-   	    chunk_sizes[cpu] = nb_pix_to_treat;	
-            offsets[cpu] = offset;
-
-            offset += nb_pix_to_treat;
-		
-            MPI_Request request;
-            MPI_Isend(&chunk_sizes[cpu], 1, MPI_INT, cpu, 1, env.comm, &request);
-        }       
-    }
-
-    MPI_Recv(&local_chunk_size, 1, MPI_INT, 0, 1, env.comm, MPI_STATUS_IGNORE);
-    
-    Pixel* local_chunk_buffer = malloc(local_chunk_size * sizeof(*local_chunk_buffer));
-    MPI_Scatterv(work_buffer, chunk_sizes, offsets, env.types.pixel,
-                 local_chunk_buffer, local_chunk_size, env.types.pixel,
-                 ROOT_RANK, env.comm);
-    
-    unsigned int local_sum = 0;
-    for(int i = 0; i < local_chunk_size; ++i){
-        Pixel pix = local_chunk_buffer[i];
-    	local_sum += (unsigned int)(pix.r + pix.g + pix.b);
-    }
-
-    unsigned int global_sum = 0;
-    MPI_Allreduce(&local_sum, &global_sum, 1, MPI_UNSIGNED, MPI_SUM, env.comm);
-
-    unsigned int threshold = global_sum / image_size;
-    
-    Pixel* pass_output = malloc(local_chunk_size * sizeof(*pass_output));
     Pixel* output = malloc(image_size * sizeof(*output));
 
-    thresfilter(threshold, local_chunk_size, local_chunk_buffer, pass_output);  	
-
-    MPI_Gatherv(pass_output, local_chunk_size, env.types.pixel,
-                output, chunk_sizes, offsets, env.types.pixel,
-                ROOT_RANK, env.comm);
+    do_thresholding(image_size, work_buffer, output);
 
     // Writing program output (filtered image)
     if (env.rank == ROOT_RANK) {
