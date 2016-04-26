@@ -113,8 +113,9 @@ void distribute_image(Pixel* buffer, const int buffer_size,
             current_to_recv_offset += chunk.nb_pix_to_treat;
             current_idx += chunk.nb_pix_to_treat;
 
-            MPI_Send(&chunk, 1, env.types.chunk, cpu, 0, env.comm);
-            MPI_Send(&to_send_chunk_sizes[cpu], 1, MPI_INT, cpu, 1, env.comm);
+            MPI_Request req_chunk, req_size;
+            MPI_Isend(&chunk, 1, env.types.chunk, cpu, 0, env.comm, &req_chunk);
+            MPI_Isend(&to_send_chunk_sizes[cpu], 1, MPI_INT, cpu, 1, env.comm, &req_size);
         }
     }
 
