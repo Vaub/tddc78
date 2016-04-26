@@ -11,7 +11,7 @@ include_directories(SYSTEM ${MPI_INCLUDE_PATH})
 
 set(SOURCE_FILES types.c mpi_env.c filters/ppmio.c)
 set(BLUR_FILES blur_main.c blur_filter.c filters/gaussw.c)
-set(THRE_FILES threshold_main.c threshold_filter.c)
+set(THRE_FILES threshold_main.c threshold_filter.c blur_filter.c)
 
 set(COMMON_LIBS m pthread)
 
