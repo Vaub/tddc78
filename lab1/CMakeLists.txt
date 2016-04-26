@@ -9,7 +9,13 @@ set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -Wall -Werror -std=c99")
 # include_directories(filters)
 include_directories(SYSTEM ${MPI_INCLUDE_PATH})
 
-set(SOURCE_FILES main.c types.c mpi_env.c blur_filter.c filters/ppmio.c filters/gaussw.c)
+set(SOURCE_FILES types.c mpi_env.c filters/ppmio.c)
+set(BLUR_FILES blur_main.c blur_filter.c filters/gaussw.c)
+set(THRE_FILES threshold_main.c threshold_filter.c)
 
-add_executable(lab1 ${SOURCE_FILES})
-target_link_libraries(lab1 ${MPI_C_LIBRARIES} m pthread)
+set(COMMON_LIBS m pthread)
+
+add_executable(lab1_blur ${BLUR_FILES} ${SOURCE_FILES})
+add_executable(lab1_thre ${THRE_FILES} ${SOURCE_FILES})
+target_link_libraries(lab1_blur ${MPI_C_LIBRARIES} ${COMMON_LIBS})
+target_link_libraries(lab1_thre ${MPI_C_LIBRARIES} ${COMMON_LIBS})
