@@ -174,20 +174,26 @@ int main(int argc, char **argv) {
     if (env.rank == ROOT_RANK) {
         x_pass_buffer = malloc(image_size * sizeof(*x_pass_buffer));
         y_flip_output = malloc(image_size * sizeof(*y_flip_output));
-        y_pass_buffer = malloc(image_size * sizeof(*y_pass_buffer));
-        x_flip_output = malloc(image_size * sizeof(*x_flip_output));
     }
 
     // Blur pass for X
     distribute_image(work_buffer, image_size, image.width, &filter, x_pass_buffer);
     if (env.rank == ROOT_RANK) {
         flip_axis(image.width, image.height, x_pass_buffer, y_flip_output);
+
+        free(x_pass_buffer);
+        y_pass_buffer = malloc(image_size * sizeof(*y_pass_buffer));
     }
 
     // Blur pass for Y
     distribute_image(y_flip_output, image_size, image.height, &filter, y_pass_buffer);
     if (env.rank == ROOT_RANK) {
+        free(y_flip_output);
+        x_flip_output = malloc(image_size * sizeof(*x_flip_output));
+
         flip_axis(image.height, image.width, y_pass_buffer, x_flip_output);
+
+        free(y_pass_buffer);
     }
 
     // Writing program output (filtered image)
