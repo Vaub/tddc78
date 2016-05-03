@@ -1,11 +1,11 @@
 #include <pthread.h>
 #include <stdlib.h>
 #include <printf.h>
+#include <stdio.h>
 
 #include "image.h"
 #include "pthread_barrier.h"
 #include "filters/ppmio.h"
-//#include "filters/ppmio.h"
 
 //#define uint unsigned int
 

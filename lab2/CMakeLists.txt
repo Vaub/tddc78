@@ -3,7 +3,7 @@ project(lab2)
 
 set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -Wall -Werror -std=c99")
 
-set(SOURCE_FILES filters/ppmio.c image.c pthread_barrier.c)
+set(SOURCE_FILES filters/gaussw.c filters/ppmio.c image.c pthread_barrier.c)
 add_executable(lab2_blur blur_main.c ${SOURCE_FILES})
 add_executable(lab2_thre thre_main.c ${SOURCE_FILES})
 
