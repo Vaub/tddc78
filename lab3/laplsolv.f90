@@ -1,4 +1,6 @@
 program laplsolv
+
+  use omp_lib
 !-----------------------------------------------------------------------
 ! Serial program for solving the heat conduction problem 
 ! on a square using the Jacobi method. 
@@ -18,8 +20,6 @@ program laplsolv
 
   integer :: num_cpu, reminder, cpu, current_idx
   integer :: from_l, to_l, chunk_size  
-
-  integer :: OMP_GET_NUM_THREADS, OMP_GET_THREAD_NUM
 
   ! Set boundary conditions and initial values for the unknowns
   T=0.0D0
