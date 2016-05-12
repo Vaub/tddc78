@@ -11,7 +11,7 @@ program laplsolv
   double precision,parameter          :: tol=1.0E-3
   double precision,dimension(0:n+1,0:n+1) :: T
   double precision,dimension(n)       :: tmp1,tmp2
-  double precision,dimension(n+2)     :: tmp3
+  double precision,dimension(0:n+1)   :: tmp3
   double precision                    :: error,x,local_error
   real                                :: t1,t0
   integer                             :: i,j,k,c
