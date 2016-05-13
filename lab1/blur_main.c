@@ -72,7 +72,7 @@ void distribute_image(Pixel *buffer, const int buffer_size,
 
     ImageChunk local_chunk;
     int local_chunk_size;
-    
+
     //printf("Row size : %d\n", row_size);
 
     // MPI Scatter/Gather counts & displacements
@@ -89,7 +89,8 @@ void distribute_image(Pixel *buffer, const int buffer_size,
     //int current_to_recv_offset = 0; // For Gatherv count
     for (int cpu = 0; cpu < env.nb_cpu; ++cpu) {
         if (env.rank == ROOT_RANK) {
-	    ImageChunk chunk;
+            ImageChunk chunk;
+
             // Buffer size that will be blurred by the process [cpu]
             int nb_pix_to_treat = avg_chunk_size
                                   + (chunk_reminder > 0 ? 1 : 0);
@@ -103,9 +104,9 @@ void distribute_image(Pixel *buffer, const int buffer_size,
             int pixels_before = min(filter->radius, row_pos_start),
                     pixels_after = min(filter->radius, (row_size - 1) - row_pos_end);
 
-	    //printf("CPU %d - from %d with %d pixels\n",cpu,current_idx,nb_pix_to_treat);
-	    //printf("CPU %d - [%d | %d to %d | %d]\n",cpu,pixels_before,row_pos_start,row_pos_end,pixels_after);
-	   
+            //printf("CPU %d - from %d with %d pixels\n",cpu,current_idx,nb_pix_to_treat);
+            //printf("CPU %d - [%d | %d to %d | %d]\n",cpu,pixels_before,row_pos_start,row_pos_end,pixels_after);
+
             chunk.img_idx = current_idx - pixels_before;
             chunk.start_offset = pixels_before;
             chunk.nb_pix_to_treat = nb_pix_to_treat;
@@ -115,11 +116,11 @@ void distribute_image(Pixel *buffer, const int buffer_size,
             to_send_offsets[cpu] = chunk.img_idx;
             to_receive_chunk_sizes[cpu] = chunk.nb_pix_to_treat;
             to_receive_offsets[cpu] = current_idx;
-	    //printf("CPU %d - send %d at %d\n",cpu,to_send_chunk_sizes[cpu],to_send_offsets[cpu]);
-	    //printf("CPU %d - recv %d at %d\n",cpu,to_receive_chunk_sizes[cpu],to_receive_offsets[cpu]);
-	    
+            //printf("CPU %d - send %d at %d\n",cpu,to_send_chunk_sizes[cpu],to_send_offsets[cpu]);
+            //printf("CPU %d - recv %d at %d\n",cpu,to_receive_chunk_sizes[cpu],to_receive_offsets[cpu]);
+
             current_idx += chunk.nb_pix_to_treat;
-	   
+
             MPI_Request req_chunk, req_size;
             MPI_Isend(&chunk, 1, env.types.chunk, cpu, 0, env.comm, &req_chunk);
             MPI_Isend(&to_send_chunk_sizes[cpu], 1, MPI_INT, cpu, 1, env.comm, &req_size);
@@ -135,8 +136,8 @@ void distribute_image(Pixel *buffer, const int buffer_size,
     MPI_Scatterv(buffer, to_send_chunk_sizes, to_send_offsets, env.types.pixel,
                  local_chunk_buffer, local_chunk_size, env.types.pixel,
                  ROOT_RANK, env.comm);
-    
-         
+
+
 
     // Parallel blur
     Pixel *pass_output = malloc(local_chunk.nb_pix_to_treat * sizeof(*pass_output));
