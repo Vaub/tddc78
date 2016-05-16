@@ -1,5 +1,4 @@
 program laplsolv
-use omp_lib
 !-----------------------------------------------------------------------
 ! Serial program for solving the heat conduction problem 
 ! on a square using the Jacobi method. 
@@ -9,15 +8,11 @@ use omp_lib
   integer, parameter                  :: n=1000, maxiter=1000
   double precision,parameter          :: tol=1.0E-3
   double precision,dimension(0:n+1,0:n+1) :: T
-  double precision,dimension(n)       :: tmp1,tmp2,tmp3,left_col,right_col
+  double precision,dimension(n)       :: tmp1,tmp2
   double precision                    :: error,x
   real                                :: t1,t0
-  integer                             :: i,j,k,cpu,nb_cpu
+  integer                             :: i,j,k
   character(len=20)                   :: str
-  integer, dimension(:), allocatable  :: from_col(:), to_col(:)
-  integer                             :: reminder, current_col, chunk_size
-
-  
   
   ! Set boundary conditions and initial values for the unknowns
   T=0.0D0
@@ -29,59 +24,17 @@ use omp_lib
   ! Solve the linear system of equations using the Jacobi method
   call cpu_time(t0)
   
-  !$omp parallel shared(nb_cpu)
-  nb_cpu = omp_get_num_threads()
-  !$omp end parallel
-
-  allocate(from_col(1:nb_cpu))
-  allocate(to_col(1:nb_cpu))
-    
-  current_col = 1
-  chunk_size = n / nb_cpu
-  reminder = modulo(n,nb_cpu)
-  
-  do cpu=1,nb_cpu
-        from_col(cpu) = current_col
-        to_col(cpu) = current_col + chunk_size - 1
-        if (reminder > 0) then
-            to_col(cpu) = to_col(cpu) + 1
-            reminder = reminder - 1
-        end if
-        current_col = to_col(cpu) + 1
-  end do
-  
-  
   do k=1,maxiter
+     
+     tmp1=T(1:n,0)
      error=0.0D0
      
-     !$omp parallel             &
-     !$omp default(private)     &
-     !$omp shared(T,error,from_col,to_col)
-     
-     cpu = omp_get_thread_num() + 1
-     left_col = T(1:n,from_col(cpu)-1)
-     right_col = T(1:n,to_col(cpu)+1)
-
-     !$omp barrier
-
-     tmp1=left_col
-     do j=from_col(cpu),to_col(cpu)
+     do j=1,n
         tmp2=T(1:n,j)
-
-        if (j+1 > to_col(cpu)) then
-            tmp3 = right_col
-        else
-            tmp3 = T(1:n,j+1)
-        endif
-
-        T(1:n,j)=(T(0:n-1,j)+T(2:n+1,j)+tmp3+tmp1)/4.0D0
-        tmp1=tmp2
-
-        !$omp atomic 
+        T(1:n,j)=(T(0:n-1,j)+T(2:n+1,j)+T(1:n,j+1)+tmp1)/4.0D0
         error=max(error,maxval(abs(tmp2-T(1:n,j))))
+        tmp1=tmp2
      end do
-
-     !$omp end parallel
      
      if (error<tol) then
         exit
