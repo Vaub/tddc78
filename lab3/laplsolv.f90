@@ -12,7 +12,7 @@ program laplsolv
   double precision,parameter          :: tol=1.0E-3
   double precision,dimension(0:n+1,0:n+1) :: T
   double precision,dimension(n)       :: tmp1,tmp2,tmp3,left_col,right_col
-  double precision                    :: error,local_error,x
+  double precision                    :: error,x
   double precision                    :: t1,t0
   integer                             :: i,j,k,cpu,nb_cpu
   character(len=20)                   :: str
@@ -54,12 +54,10 @@ program laplsolv
   do k=1,maxiter
      error=0.0D0
      
-     !$omp parallel             &
-     !$omp default(private)     &
-     !$omp shared(T,error,from_col,to_col)
+     !$omp parallel reduction(MAX:error) &
+     !$omp default(private)              &
+     !$omp shared(T,from_col,to_col) 
      
-     local_error = 0.0D0
-
      cpu = omp_get_thread_num() + 1
      left_col = T(1:n,from_col(cpu)-1)
      right_col = T(1:n,to_col(cpu)+1)
@@ -79,11 +77,8 @@ program laplsolv
         T(1:n,j)=(T(0:n-1,j)+T(2:n+1,j)+tmp3+tmp1)/4.0D0
         tmp1=tmp2
 
-        local_error = max(local_error, maxval(abs(tmp2-T(1:n,j))))
+        error = max(error, maxval(abs(tmp2-T(1:n,j))))
      end do
-
-     !$omp atomic
-     error=max(local_error,error)
 
      !$omp end parallel
      
