@@ -26,7 +26,8 @@ program laplsolv
   T(0:n+1 , 0)     = 1.0D0
   T(0:n+1 , n+1)   = 1.0D0
   T(n+1   , 0:n+1) = 2.0D0
-  
+ 
+  ! finding the num of threads 
   !$omp parallel shared(nb_cpu)
   nb_cpu = omp_get_max_threads()
   !$omp end parallel
@@ -38,6 +39,7 @@ program laplsolv
   chunk_size = n / nb_cpu
   reminder = modulo(n,nb_cpu)
   
+  ! every cpu gets a left/right column index
   do cpu=1,nb_cpu
         from_col(cpu) = current_col
         to_col(cpu) = current_col + chunk_size - 1
@@ -58,6 +60,7 @@ program laplsolv
      !$omp default(private)              &
      !$omp shared(T,from_col,to_col) 
      
+     ! every threads get its "shared" column in local memory 
      cpu = omp_get_thread_num() + 1
      left_col = T(1:n,from_col(cpu)-1)
      right_col = T(1:n,to_col(cpu)+1)
@@ -68,6 +71,7 @@ program laplsolv
      do j=from_col(cpu),to_col(cpu)
         tmp2=T(1:n,j)
 
+        ! if outside of thread scope, use its shared column
         if (j+1 > to_col(cpu)) then
             tmp3 = right_col
         else
@@ -77,7 +81,7 @@ program laplsolv
         T(1:n,j)=(T(0:n-1,j)+T(2:n+1,j)+tmp3+tmp1)/4.0D0
         tmp1=tmp2
 
-        error = max(error, maxval(abs(tmp2-T(1:n,j))))
+        error = max(error, maxval(abs(tmp2-T(1:n,j)))) ! will be reduced (MAX) by omp
      end do
 
      !$omp end parallel
