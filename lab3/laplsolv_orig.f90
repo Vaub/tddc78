@@ -5,7 +5,7 @@ program laplsolv
 ! Written by Fredrik Berntsson (frber@math.liu.se) March 2003
 ! Modified by Berkant Savas (besav@math.liu.se) April 2006
 !-----------------------------------------------------------------------
-  integer, parameter                  :: n=250, maxiter=1000
+  integer, parameter                  :: n=1000, maxiter=1000
   double precision,parameter          :: tol=1.0E-3
   double precision,dimension(0:n+1,0:n+1) :: T
   double precision,dimension(n)       :: tmp1,tmp2
@@ -50,11 +50,11 @@ program laplsolv
   ! Uncomment the next part if you want to write the whole solution
   ! to a file. Useful for plotting. 
   
-  !open(unit=7,action='write',file='result.dat',status='unknown')
-  !write(unit=str,fmt='(a,i6,a)') '(',N,'F10.6)'
-  !do i=0,n+1
-  !   write (unit=7,fmt=str) T(i,0:n+1)  
-  !end do
-  !close(unit=7)
+  open(unit=7,action='write',file='result_orig.dat',status='unknown')
+  write(unit=str,fmt='(a,i6,a)') '(',N,'F10.6)'
+  do i=0,n+1
+     write (unit=7,fmt=str) T(i,0:n+1)  
+  end do
+  close(unit=7)
   
 end program laplsolv
