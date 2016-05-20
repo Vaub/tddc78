@@ -16,7 +16,7 @@ double rand_range(void) {
     return (double)rand() / (double)RAND_MAX;
 }
 
-void send_to_neighbours(int flag, const mpi_env_t& env, std::vector<particle_t>& particles) {
+void send_to_neighbours(int flag, const mpi_env_t& env, int count, particle_t* particles) {
 
     MPI_Request requests[3][3];
     for (int i = 0; i < 3; ++i) {
@@ -24,7 +24,7 @@ void send_to_neighbours(int flag, const mpi_env_t& env, std::vector<particle_t>&
             int nbr_rank = env.nbrs[i][j];
             if (nbr_rank == -1 || nbr_rank == env.rank) { continue; }
 
-            MPI_Issend(&particles, (int)particles.size(), env.types.particle, nbr_rank, flag,
+            MPI_Issend(particles, count, env.types.particle, nbr_rank, flag,
                        env.grid_comm, &requests[i][j]);
         }
     }
@@ -90,7 +90,7 @@ int main(int argc, char* argv[]) {
     to_send.reserve(particles.size());
     std::copy(particles.begin(), particles.end(), std::back_inserter(to_send));
 
-    send_to_neighbours(FLAG_NBR_PARTICLES, env, to_send);
+    send_to_neighbours(FLAG_NBR_PARTICLES, env, (int)to_send.size(), &to_send[0]);
     receive_from_neighbours(FLAG_NBR_PARTICLES, env, received_count, received_array);
 
     std::list<particle_t> received(received_array, received_array + sizeof(received_array) / received_count);
