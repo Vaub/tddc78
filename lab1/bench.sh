@@ -2,7 +2,8 @@
 
 for i in `seq 1 5`; do
 
-    mpirun -n $i build/Release/lab1 500 images/im2.ppm images/imOut.ppm
+    a = $(($i**2))
+    mpirun -n $a build/Release/lab1 500 images/im2.ppm images/imOut.ppm
     
 done
 
