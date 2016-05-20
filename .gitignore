@@ -7,6 +7,9 @@
 *.o
 *~
 
+*.stf*
+*.prot
+
 !CMakeLists.txt
 
 # CMake
