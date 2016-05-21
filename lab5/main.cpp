@@ -2,7 +2,7 @@
 #include <stdlib.h>
 #include <list>
 #include <vector>
-#include <zconf.h>
+#include <iterator>
 
 #include "definitions.h"
 #include "mpi_env.h"
@@ -13,10 +13,10 @@
 static mpi_env_t env;
 
 double rand_range(void) {
-    return (double)rand() / (double)RAND_MAX;
+    return (double) rand() / (double) RAND_MAX;
 }
 
-void send_to_neighbours(int flag, const mpi_env_t& env, int count, particle_t* particles) {
+void send_to_neighbours(int flag, const mpi_env_t &env, int count, particle_t *particles) {
 
     MPI_Request requests[3][3];
     for (int i = 0; i < 3; ++i) {
@@ -24,16 +24,17 @@ void send_to_neighbours(int flag, const mpi_env_t& env, int count, particle_t* p
             int nbr_rank = env.nbrs[i][j];
             if (nbr_rank == -1 || nbr_rank == env.rank) { continue; }
 
-            MPI_Issend(particles, count, env.types.particle, nbr_rank, flag,
-                       env.grid_comm, &requests[i][j]);
+            MPI_Isend(particles, count, env.types.particle, nbr_rank, flag,
+                      env.grid_comm, &requests[i][j]);
         }
     }
 
 }
 
-void receive_from_neighbours(int flag, const mpi_env_t& env, int& count, particle_t* particles) {
+std::vector<particle_t> receive_from_neighbours(int flag, const mpi_env_t &env) {
 
-    count = 0;
+    int count = 0;
+    std::vector<particle_t> received(MAX_NO_PARTICLES);
 
     for (int i = 0; i < 3; ++i) {
         for (int j = 0; j < 3; ++j) {
@@ -42,105 +43,116 @@ void receive_from_neighbours(int flag, const mpi_env_t& env, int& count, particl
 
             int tmp_count;
             MPI_Status status;
-            MPI_Recv(particles, MAX_NO_PARTICLES, env.types.particle, nbr_rank, flag,
+            MPI_Recv(&received[count], MAX_NO_PARTICLES, env.types.particle, nbr_rank, flag,
                      env.grid_comm, &status);
 
             MPI_Get_count(&status, env.types.particle, &tmp_count);
-            //count += tmp_count;
+            count += tmp_count;
         }
     }
 
+    return std::vector<particle_t>(&received[0], &received[0] + count);
 }
 
-int main(int argc, char* argv[]) {
+bool try_send_to_nbrs(const mpi_env_t& env, const cord_t &block,
+                      const particle_t &particle, std::vector<particle_t> nbrs[3][3]) {
+    const pcord_t &coords = particle.pcord;
+
+    int shift_x = coords.x < block.x0 ? -1 :
+                  coords.x > block.x1 ? +1 :
+                  0;
+    int shift_y = coords.y < block.y0 ? -1 :
+                  coords.y > block.y1 ? +1 :
+                  0;
+
+    if (shift_x == 0 && shift_y == 0) { return false; }
+    nbrs[1 + shift_x][1 + shift_y].push_back(particle);
+
+    return true;
+}
+
+int main(int argc, char *argv[]) {
 
     env = init_env(&argc, &argv);
 
-    float block_width = (float)ceil(BOX_HORIZ_SIZE / (float)env.grid_size[0]);
-    float block_height = (float)ceil(BOX_VERT_SIZE / (float)env.grid_size[1]);
+    float block_width = (float) ceil(BOX_HORIZ_SIZE / (float) env.grid_size[0]);
+    float block_height = (float) ceil(BOX_VERT_SIZE / (float) env.grid_size[1]);
 
     cord_t block = {
-        .x0 = block_width * env.coords[0], .y0 = block_height * env.coords[1],
-        .x1 = block_width * env.coords[0] + block_width,
-        .y1 = block_height * env.coords[1] + block_height
+            .x0 = block_width * env.coords[0], .y0 = block_height * env.coords[1],
+            .x1 = block_width * env.coords[0] + block_width,
+            .y1 = block_height * env.coords[1] + block_height
     };
-    cord_t wall = { .x0 = 0, .y0 = 0, .x1 = BOX_HORIZ_SIZE, .y1 = BOX_VERT_SIZE };
+    cord_t wall = {.x0 = 0, .y0 = 0, .x1 = BOX_HORIZ_SIZE, .y1 = BOX_VERT_SIZE};
 
-    std::list<particle_t> particles(NB_PARTICLES);
+    std::vector<particle_t> particles((size_t)(NB_PARTICLES / env.nb_cpu));
     for (auto& particle : particles) {
-        double vel = rand_range() * MAX_INITIAL_VELOCITY;
+        double r = rand_range() * MAX_INITIAL_VELOCITY;
         double angle = rand_range() * (2*PI);
-
         pcord_t pcord = {
-            .x = (float)(rand_range() * block_width + block.x0),
-            .y = (float)(rand_range() * block_height + block.y0),
-            .vx = (float)(vel * cos(angle)), .vy = (float)(vel * sin(angle))
+                .x = block_width * (float)rand_range() + block.x0,
+                .y = block_height * (float)rand_range() + block.y0,
+                .vx = (float)(r * cos(angle)), .vy = (float)(r * sin(angle))
         };
 
         particle.pcord = pcord;
     }
 
-    double pressure = 0.0;
+    for (auto step = 0; step < NB_STEPS; ++step) {
 
-    std::vector<particle_t> treated;
-    std::vector<particle_t> to_send;
-    auto received_array = new particle_t[MAX_NO_PARTICLES];
-    int received_count;
+        std::vector<particle_t> to_send_nbrs[3][3];
+        std::vector<particle_t> received = receive_from_neighbours(FLAG_NBR_PARTICLES, env);
 
-    to_send.reserve(particles.size());
-    std::copy(particles.begin(), particles.end(), std::back_inserter(to_send));
-
-    send_to_neighbours(FLAG_NBR_PARTICLES, env, (int)to_send.size(), &to_send[0]);
-    receive_from_neighbours(FLAG_NBR_PARTICLES, env, received_count, received_array);
-
-    std::list<particle_t> received(received_array, received_array + sizeof(received_array) / received_count);
-
-    printf("%d \t Received %d particles from nbrs\n", env.rank, received_count);
-    for (int step = 0; step < NB_STEPS; ++step) {
-
-        for (auto current = particles.begin(); current != particles.end(); ++current) {
-
+        for (auto current = particles.begin(); current != particles.end();) {
+            auto& particle = *current;
             bool has_interacted = false;
+
             for (auto i = std::next(current); i != particles.end() && !has_interacted; ++i) {
-                float collided_at = collide(&current->pcord, &i->pcord);
-                if (collided_at == -1) continue;
+                float collision = collide(&particle.pcord, &i->pcord);
+                if (collision == -1) { continue; }
 
-                interact(&current->pcord, &i->pcord, collided_at);
-
-                treated.push_back(*current);
-                particles.erase(i);
                 has_interacted = true;
+                interact(&particle.pcord, &i->pcord, collision);
+            }
+            for (auto i = received.begin(); i != received.end() && !has_interacted; ++i) {
+                float collision = collide(&particle.pcord, &i->pcord);
+                if (collision == -1) { continue; }
+
+                has_interacted = true;
+                interact(&particle.pcord, &i->pcord, collision);
             }
 
-            for (auto i = received.begin(); i != received.end() && !has_interacted;) {
-                float collided_at = collide(&current->pcord, &i->pcord);
-                if (collided_at == -1) {
-                    i++;
-                    continue;
-                }
-
-                interact(&current->pcord, &i->pcord, collided_at);
-
-                treated.push_back(*current);
-                i = received.erase(i);
-                has_interacted = true;
+            if (!has_interacted) {
+                feuler(&particle.pcord, 1);
             }
 
-            if (has_interacted) {
+            wall_collide(&particle.pcord, wall);
+            if (try_send_to_nbrs(env, block, particle, to_send_nbrs)) {
+                current = particles.erase(current);
                 continue;
             }
 
-            feuler(&current->pcord, 1);
-            pressure += wall_collide(&current->pcord, wall);
+            current++;
         }
 
-        particles.insert(particles.end(), treated.begin(), treated.end());
-        treated.clear();
+        MPI_Request requests[3][3];
+        for (auto i = 0; i < 3; ++i) {
+            for (auto j = 0; j < 3; ++j) {
+                int nbr_rank = env.nbrs[i][j];
+                if (nbr_rank == env.rank || nbr_rank == -1) { continue; }
+                MPI_Isend(&to_send_nbrs[i][j][0], (int)to_send_nbrs[i][j].size(), env.types.particle,
+                          nbr_rank, FLAG_NEW_PARTICLES, env.grid_comm, &requests[i][j]);
+            }
+        }
 
+        std::vector<particle_t> new_particles = receive_from_neighbours(FLAG_NEW_PARTICLES, env);
+        if (env.rank == ROOT_RANK) {
+            printf("Received %d particles\n", (int)new_particles.size());
+        }
+        particles.insert(particles.end(), new_particles.begin(), new_particles.end());
+
+        MPI_Barrier(env.grid_comm);
     }
-
-    double total_pressure = pressure / (NB_STEPS + (2* BOX_VERT_SIZE + 2 * BOX_HORIZ_SIZE));
-    printf("Pressure is %f\n", total_pressure);
 
     quit_env();
 
