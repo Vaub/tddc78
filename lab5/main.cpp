@@ -7,8 +7,8 @@
 #include "definitions.h"
 #include "mpi_env.h"
 
-#define NB_PARTICLES 1000
-#define NB_STEPS 10
+#define NB_PARTICLES 100000
+#define NB_STEPS 100
 
 static mpi_env_t env;
 
@@ -98,9 +98,13 @@ int main(int argc, char *argv[]) {
         particle.pcord = pcord;
     }
 
+    double local_pressure = 0;
+    //double t_start = MPI_Wtime();
     for (auto step = 0; step < NB_STEPS; ++step) {
 
         std::vector<particle_t> to_send_nbrs[3][3];
+
+        send_to_neighbours(FLAG_NBR_PARTICLES, env, (int)particles.size(), &particles[0]);
         std::vector<particle_t> received = receive_from_neighbours(FLAG_NBR_PARTICLES, env);
 
         for (auto current = particles.begin(); current != particles.end();) {
@@ -126,7 +130,7 @@ int main(int argc, char *argv[]) {
                 feuler(&particle.pcord, 1);
             }
 
-            wall_collide(&particle.pcord, wall);
+            local_pressure += wall_collide(&particle.pcord, wall);
             if (try_send_to_nbrs(env, block, particle, to_send_nbrs)) {
                 current = particles.erase(current);
                 continue;
@@ -135,6 +139,7 @@ int main(int argc, char *argv[]) {
             current++;
         }
 
+        int sent = 0;
         MPI_Request requests[3][3];
         for (auto i = 0; i < 3; ++i) {
             for (auto j = 0; j < 3; ++j) {
@@ -142,16 +147,28 @@ int main(int argc, char *argv[]) {
                 if (nbr_rank == env.rank || nbr_rank == -1) { continue; }
                 MPI_Isend(&to_send_nbrs[i][j][0], (int)to_send_nbrs[i][j].size(), env.types.particle,
                           nbr_rank, FLAG_NEW_PARTICLES, env.grid_comm, &requests[i][j]);
+                sent += to_send_nbrs[i][j].size();
             }
         }
 
         std::vector<particle_t> new_particles = receive_from_neighbours(FLAG_NEW_PARTICLES, env);
-        if (env.rank == ROOT_RANK) {
-            printf("Received %d particles\n", (int)new_particles.size());
-        }
         particles.insert(particles.end(), new_particles.begin(), new_particles.end());
 
+        //printf("[%d] \t Received %d particles, sent %d, now with %d total\n",
+        //       env.rank, (int)new_particles.size(), sent, (int)particles.size());
         MPI_Barrier(env.grid_comm);
+        //if (env.rank == ROOT_RANK) {
+        //    printf("\n=== ITER %d ===\n", step + 1);
+        //}
+    }
+
+    double pressure = 0;
+    MPI_Reduce(&local_pressure, &pressure, 1, MPI_DOUBLE, MPI_SUM, ROOT_RANK, env.grid_comm);
+
+    //double t_end = MPI_Wtime();
+    if(env.rank == ROOT_RANK){
+        pressure /= (NB_STEPS * (2 * BOX_HORIZ_SIZE + 2 * BOX_VERT_SIZE));
+        printf("Pressure : %f \t Time: %f\n", pressure,0.0);
     }
 
     quit_env();
