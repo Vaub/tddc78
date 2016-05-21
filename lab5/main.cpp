@@ -7,8 +7,8 @@
 #include "definitions.h"
 #include "mpi_env.h"
 
-#define NB_PARTICLES 100000
-#define NB_STEPS 100
+#define NB_PARTICLES 10000
+#define NB_STEPS 10
 
 static mpi_env_t env;
 
@@ -99,7 +99,7 @@ int main(int argc, char *argv[]) {
     }
 
     double local_pressure = 0;
-    //double t_start = MPI_Wtime();
+    double t_start = MPI_Wtime();
     for (auto step = 0; step < NB_STEPS; ++step) {
 
         std::vector<particle_t> to_send_nbrs[3][3];
@@ -165,10 +165,10 @@ int main(int argc, char *argv[]) {
     double pressure = 0;
     MPI_Reduce(&local_pressure, &pressure, 1, MPI_DOUBLE, MPI_SUM, ROOT_RANK, env.grid_comm);
 
-    //double t_end = MPI_Wtime();
+    double t_end = MPI_Wtime();
     if(env.rank == ROOT_RANK){
         pressure /= (NB_STEPS * (2 * BOX_HORIZ_SIZE + 2 * BOX_VERT_SIZE));
-        printf("Pressure : %f \t Time: %f\n", pressure,0.0);
+        printf("Pressure : %f \t Time: %f\n", pressure,t_end-t_start);
     }
 
     quit_env();
