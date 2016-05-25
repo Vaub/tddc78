@@ -91,6 +91,7 @@ int main(int argc, char *argv[]) {
 
         // Particles sent to neighbours
         std::vector<particle_t> to_send_nbrs[3][3];
+        std::vector<particle_t> collided;
 
         for (auto current = particles.begin(); current != particles.end();) {
             auto& particle = *current;
@@ -105,6 +106,8 @@ int main(int argc, char *argv[]) {
                 }
 
                 interact(&particle.pcord, &with->pcord, collided_at);
+
+                collided.push_back(*with);
                 particles.erase(with);
                 has_collided = true;
             }
@@ -114,15 +117,19 @@ int main(int argc, char *argv[]) {
                 feuler(&particle.pcord, 1);
             }
 
-            local_pressure += wall_collide(&particle.pcord, wall);
+            current++;
+        }
 
-            // check if particle still in region, else send to neighbour
-            if (try_send_to_nbrs(env, block, particle, to_send_nbrs)) {
-                current = particles.erase(current);
+        particles.insert(particles.end(), collided.begin(), collided.end());
+        for (auto i = particles.begin(); i != particles.end();) {
+            local_pressure += wall_collide(&i->pcord, wall);
+
+            if (try_send_to_nbrs(env, block, *i, to_send_nbrs)) {
+                i = particles.erase(i);
                 continue;
             }
 
-            current++;
+            i++;
         }
 
         int sent = 0;
@@ -152,7 +159,7 @@ int main(int argc, char *argv[]) {
 
     double t_end = MPI_Wtime();
     if(env.rank == ROOT_RANK){
-        pressure /= ((2 * (BOX_HORIZ_SIZE + BOX_VERT_SIZE)));
+        pressure /= (NB_STEPS * (2 * (BOX_HORIZ_SIZE + BOX_VERT_SIZE)));
         printf("Pressure : %f \t Time: %f\n", pressure,t_end-t_start);
     }
 
