@@ -71,8 +71,15 @@ mpi_env_t init_env(int* argc, char** argv[]) {
     MPI_Comm_size(MPI_COMM_WORLD, &nb_cpu);
 
     int factor = (int)sqrt(nb_cpu);
-    int nb_rows = factor, nb_cols = nb_cpu / factor;
+    int nb_rows = factor, nb_cols = ceil(nb_cpu / factor);
     int nb_procs = nb_rows * nb_cols;
+
+    if (nb_cpu > nb_procs && nb_cpu % 2 == 0) {
+	nb_rows = 2;
+	nb_cols = nb_cpu / 2;
+
+        nb_procs = nb_rows * nb_cols;
+    }
 
     if (nb_cpu > nb_procs) {
         printf("%d process will not fit in a [%d x %d] grid!\n", nb_cpu, nb_rows, nb_cols);
@@ -99,7 +106,7 @@ mpi_env_t init_env(int* argc, char** argv[]) {
     int x = env.coords[0], y = env.coords[1];
 
     if (env.rank == ROOT_RANK) {
-        printf("Init %d procs on a [%d x %d] grid\n", nb_procs, nb_rows, nb_cols);
+        //printf("Init %d procs on a [%d x %d] grid\n", nb_procs, nb_rows, nb_cols);
     }
 
     int nbrs_coords[3][3][2];
@@ -112,13 +119,13 @@ mpi_env_t init_env(int* argc, char** argv[]) {
     }
 
     if (env.rank == ROOT_RANK) {
-        printf("Me (0,0) with rank %d\n", env.rank);
+        //printf("Me (0,0) with rank %d\n", env.rank);
 
         for (auto i = 0; i < 3; ++i) {
             for (auto j = 0; j < 3; ++j) {
                 int rank = env.nbrs[i][j];
                 if (rank == NO_NBR || rank == ROOT_RANK) continue;
-                printf("Nbr (%d,%d) with rank %d\n", x - 1 + i, y - 1 + j, rank);
+               // printf("Nbr (%d,%d) with rank %d\n", x - 1 + i, y - 1 + j, rank);
             }
         }
     }

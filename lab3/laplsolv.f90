@@ -8,13 +8,14 @@ program laplsolv
 ! Written by Fredrik Berntsson (frber@math.liu.se) March 2003
 ! Modified by Berkant Savas (besav@math.liu.se) April 2006
 !-----------------------------------------------------------------------
-  integer, parameter                  :: n=1000, maxiter=1000
+  integer, parameter                  :: n=2000, maxiter=1000
   double precision,parameter          :: tol=1.0E-3
   double precision,dimension(0:n+1,0:n+1) :: T
   double precision,dimension(n)       :: tmp1,tmp2,tmp3,left_col,right_col
   double precision                    :: error,x
   double precision                    :: t1,t0
   integer                             :: i,j,k,cpu,nb_cpu
+  integer*8                           :: flops
   character(len=20)                   :: str
   integer, dimension(:), allocatable  :: from_col(:), to_col(:)
   integer                             :: reminder, current_col, chunk_size
@@ -53,6 +54,7 @@ program laplsolv
   ! Solve the linear system of equations using the Jacobi method
   t0 = omp_get_wtime()
   
+  !flops = 0
   do k=1,maxiter
      error=0.0D0
      
@@ -79,9 +81,12 @@ program laplsolv
         endif
 
         T(1:n,j)=(T(0:n-1,j)+T(2:n+1,j)+tmp3+tmp1)/4.0D0
+        !flops = flops + n*4
+
         tmp1=tmp2
 
         error = max(error, maxval(abs(tmp2-T(1:n,j)))) ! will be reduced (MAX) by omp
+        !flops = flops + (n * 2 + n + 1)
      end do
 
      !$omp end parallel
@@ -96,6 +101,7 @@ program laplsolv
 
   write(unit=*,fmt=*) 'Time:',t1-t0,'Number of Iterations:',k
   write(unit=*,fmt=*) 'Temperature of element T(1,1)  =',T(1,1)
+  !write(unit=*,fmt=*) 'FLOP:',flops
 
   ! Uncomment the next part if you want to write the whole solution
   ! to a file. Useful for plotting. 

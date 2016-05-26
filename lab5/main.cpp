@@ -7,8 +7,8 @@
 #include "definitions.h"
 #include "mpi_env.h"
 
-#define NB_PARTICLES 100
-#define NB_STEPS 1000
+#define NB_PARTICLES 1000
+#define NB_STEPS 100
 
 static mpi_env_t env;
 
@@ -143,17 +143,16 @@ int main(int argc, char *argv[]) {
                 sent += to_send_nbrs[i][j].size();
             }
         }
-
+	
+	MPI_Barrier(env.grid_comm);
         std::vector<particle_t> new_particles = receive_from_neighbours(FLAG_NEW_PARTICLES, env);
         particles.insert(particles.end(), new_particles.begin(), new_particles.end());
 
-        MPI_Barrier(env.grid_comm);
-        printf("[%d] \t Received %d particles, sent %d, now with %d total\n",
-               env.rank, (int)new_particles.size(), sent, (int)particles.size());
+        //printf("[%d] \t Received %d particles, sent %d, now with %d total\n",
+        //       env.rank, (int)new_particles.size(), sent, (int)particles.size());
 
     }
 
-    MPI_Barrier(env.grid_comm);
     double pressure = 0;
     MPI_Reduce(&local_pressure, &pressure, 1, MPI_DOUBLE, MPI_SUM, ROOT_RANK, env.grid_comm);
 
