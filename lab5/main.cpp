@@ -3,12 +3,14 @@
 #include <list>
 #include <vector>
 #include <iterator>
+#include <VT.h>
 
 #include "definitions.h"
 #include "mpi_env.h"
 
-#define NB_PARTICLES 1000
-#define NB_STEPS 100
+#define NB_PARTICLES 100
+#define NB_STEPS 1000
+#define BOX_DEFAULT 10e4
 
 static mpi_env_t env;
 
@@ -40,8 +42,8 @@ std::vector<particle_t> receive_from_neighbours(int flag, const mpi_env_t &env) 
 }
 
 bool try_send_to_nbrs(const mpi_env_t& env, const cord_t &block,
-                      const particle_t &particle, std::vector<particle_t> nbrs[3][3]) {
-    const pcord_t &coords = particle.pcord;
+                      particle_t *particle, std::vector<particle_t> nbrs[3][3]) {
+    const pcord_t &coords = particle->pcord;
 
     int shift_x = coords.x < block.x0 ? -1 :
                   coords.x > block.x1 ? +1 :
@@ -52,27 +54,53 @@ bool try_send_to_nbrs(const mpi_env_t& env, const cord_t &block,
 
     if (shift_x == 0 && shift_y == 0) { return false; }
 
-    nbrs[1 + shift_x][1 + shift_y].push_back(particle);
+    //printf("(%f, %f) with square [%f -> %f]", coords.x, coords.y, block.x0, block.x1);
+
+    nbrs[1 + shift_x][1 + shift_y].push_back(*particle);
     return true;
 }
 
 int main(int argc, char *argv[]) {
 
-    env = init_env(&argc, &argv);
+    MPI_Init(&argc, &argv);
+    //VT_initialize(&argc, &argv);
+    env = init_env();
 
-    float block_width = (float) ceil(BOX_HORIZ_SIZE / (float) env.grid_size[0]);
-    float block_height = (float) ceil(BOX_VERT_SIZE / (float) env.grid_size[1]);
+    int nb_particles_cpu = argc > 1 ? atoi(argv[1]) : NB_PARTICLES;
+    float box_width = BOX_DEFAULT, box_height = BOX_DEFAULT;
+    if (argc == 3) {
+	box_width = (float)atoi(argv[2]);
+	box_height = (float)atoi(argv[3]);
+    }
+
+    int total_particles = (nb_particles_cpu * env.nb_cpu);
+    if (env.rank == ROOT_RANK && total_particles > MAX_NO_PARTICLES) {
+	printf("Error: cannot have more than %d particles, currently %d [%d x %d]", MAX_NO_PARTICLES, total_particles, env.nb_cpu, nb_particles_cpu);
+	MPI_Finalize();
+	exit(4);
+    }
+   
+    int vt_class, vt_particle_counter, vt_g_collisions, vt_g_comms;
+    VT_classdef("simulation", &vt_class);
+
+    VT_funcdef("collisions", vt_class, &vt_g_collisions);   
+
+    int64_t particle_bounds[2] = { 0, MAX_NO_PARTICLES };
+    VT_countdef("Particles", vt_class, VT_COUNT_INTEGER64, VT_ME, particle_bounds, "p", &vt_particle_counter);    
+
+    float block_width = (float) ceil(box_width / (float) env.grid_size[0]);
+    float block_height = (float) ceil(box_height / (float) env.grid_size[1]);
 
     cord_t block = {
             .x0 = block_width * env.coords[0],
             .y0 = block_height * env.coords[1],
-            .x1 = (block_width * env.coords[0]) + block_width,
-            .y1 = (block_height * env.coords[1]) + block_height
+            .x1 = ((block_width * env.coords[0]) + block_width),
+            .y1 = ((block_height * env.coords[1]) + block_height)
     };
-    cord_t wall = {.x0 = 0, .y0 = 0, .x1 = BOX_HORIZ_SIZE, .y1 = BOX_VERT_SIZE};
+    cord_t wall = {.x0 = 0, .y0 = 0, .x1 = box_width, .y1 = box_height};
 
     // Init particles with random positions and velocity
-    std::list<particle_t> particles((size_t)(NB_PARTICLES / env.nb_cpu));
+    std::list<particle_t> particles((size_t)nb_particles_cpu);
     for (auto& particle : particles) {
         double r = rand_range() * MAX_INITIAL_VELOCITY;
         double angle = rand_range() * (2*PI);
@@ -93,38 +121,44 @@ int main(int argc, char *argv[]) {
         std::vector<particle_t> to_send_nbrs[3][3];
         std::vector<particle_t> collided;
 
+	//printf("[%d] first with [%f x %f]\n", env.rank, particles.begin()->pcord.x, particles.begin()->pcord.y);
+	
         for (auto current = particles.begin(); current != particles.end();) {
-            auto& particle = *current;
             bool has_collided = false;
 
             // check collisions
+            VT_enter(vt_g_collisions, VT_NOSCL);
             for (auto with = std::next(current); with != particles.end() && !has_collided;) {
-                float collided_at = collide(&particle.pcord, &with->pcord);
+                float collided_at = collide(&current->pcord, &with->pcord);
                 if (collided_at == -1) {
                     ++with;
                     continue;
                 }
 
-                interact(&particle.pcord, &with->pcord, collided_at);
+                interact(&current->pcord, &with->pcord, collided_at);
 
                 collided.push_back(*with);
                 particles.erase(with);
                 has_collided = true;
             }
+	    VT_end(vt_g_collisions);
 
             // move particles
             if (!has_collided) {
-                feuler(&particle.pcord, 1);
+                feuler(&current->pcord, 1);
             }
 
             current++;
         }
-
+	
         particles.insert(particles.end(), collided.begin(), collided.end());
+
         for (auto i = particles.begin(); i != particles.end();) {
             local_pressure += wall_collide(&i->pcord, wall);
+	    	
 
-            if (try_send_to_nbrs(env, block, *i, to_send_nbrs)) {
+
+            if (try_send_to_nbrs(env, block, &(*i), to_send_nbrs)) {
                 i = particles.erase(i);
                 continue;
             }
@@ -147,22 +181,36 @@ int main(int argc, char *argv[]) {
 	MPI_Barrier(env.grid_comm);
         std::vector<particle_t> new_particles = receive_from_neighbours(FLAG_NEW_PARTICLES, env);
         particles.insert(particles.end(), new_particles.begin(), new_particles.end());
+	
+	int nb_particles = particles.size();
+	VT_countval(1, &vt_particle_counter, &nb_particles);
 
         //printf("[%d] \t Received %d particles, sent %d, now with %d total\n",
         //       env.rank, (int)new_particles.size(), sent, (int)particles.size());
 
     }
 
+    //printf("[%d] Pressure is %.2f with %d particles\n", env.rank, local_pressure, (int)particles.size());
+
     double pressure = 0;
     MPI_Reduce(&local_pressure, &pressure, 1, MPI_DOUBLE, MPI_SUM, ROOT_RANK, env.grid_comm);
 
     double t_end = MPI_Wtime();
     if(env.rank == ROOT_RANK){
-        pressure /= (NB_STEPS * (2 * (BOX_HORIZ_SIZE + BOX_VERT_SIZE)));
-        printf("Pressure : %f \t Time: %f\n", pressure,t_end-t_start);
+        pressure /= (NB_STEPS * (2 * (box_width + box_height)));
+	printf("Procs,Time,p,V,n,R,T\n");
+	
+	double p = pressure;
+	double V = box_width * box_height;
+	int n = total_particles;
+	double R = 8.314; // const
+	double T = (p*V)/(n*R);
+	printf("%d,%f,%f,%f,%d,%f,%f\n",env.nb_cpu,t_end-t_start,p,V,n,R,T);
     }
 
     quit_env();
+    MPI_Finalize();
+    VT_finalize();
 
     return 0;
 }

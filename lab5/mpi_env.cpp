@@ -64,9 +64,8 @@ void find_nbr_rank(MPI_Comm comm, int nb_rows, int nb_cols, const int nbr_coords
     }
 }
 
-mpi_env_t init_env(int* argc, char** argv[]) {
-    MPI_Init(argc, argv);
-
+mpi_env_t init_env(void) {
+    
     int nb_cpu = 1;
     MPI_Comm_size(MPI_COMM_WORLD, &nb_cpu);
 
@@ -134,6 +133,6 @@ mpi_env_t init_env(int* argc, char** argv[]) {
 }
 
 void quit_env(void) {
-    MPI_Finalize();
+    
 }
 

@@ -28,7 +28,7 @@ typedef struct mpi_env {
 
 
 
-mpi_env_t init_env(int* argc, char** argv[]);
+mpi_env_t init_env(void);
 
 void quit_env(void);
 
