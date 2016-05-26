@@ -2,11 +2,14 @@
 #include <stdlib.h>
 #include <printf.h>
 #include <stdio.h>
+#include <time.h>
 
 #include "filters/gaussw.h"
 #include "filters/ppmio.h"
 #include "image.h"
 #include "blur_filter.h"
+
+#define BILLION  1000000000L
 
 typedef struct thread_data {
     int offset, nb_pix_to_treat, row_length;
@@ -148,6 +151,9 @@ int main(int argc, char** argv) {
     Filter filter;
     int nb_threads;
 
+    struct timespec start, stop;
+    double exec_time = 0;
+    
     filter.weights = malloc(MAX_RADIUS * sizeof(*filter.weights));
 
     read_image(argc, argv, &image, &filter.radius, work_buffer);
@@ -159,12 +165,25 @@ int main(int argc, char** argv) {
         exit(1);
     }
 
+    int size = image.width * image.height;
+    
+    clock_gettime(CLOCK_REALTIME, &start);
+    
     blur_image(&filter, nb_threads, &image, work_buffer);
+    
+    clock_gettime(CLOCK_REALTIME, &stop);
+    
+    //Get execution time in seconds
+    exec_time = (stop.tv_sec - start.tv_sec) + 
+		(double)((stop.tv_nsec - start.tv_nsec) / (double)BILLION); //Add nano seconds
+    
+    printf("%d,%1f,%d,%d\n",
+               nb_threads, exec_time, filter.radius, size);
 
     if(write_ppm (argv[4], image.width, image.height, (char *)work_buffer) != 0) {
         exit(1);
     }
 
-    printf("Number of threads: %d\n", nb_threads);
+    //printf("Number of threads: %d\n", nb_threads);
     return 0;
 }
