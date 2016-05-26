@@ -53,7 +53,9 @@ mpi_types_t create_types(void) {
     return types;
 }
 
-
+/*
+ * Find neighbourg rank from its coordinate, -1 if no neighbours
+ */
 void find_nbr_rank(MPI_Comm comm, int nb_rows, int nb_cols, const int nbr_coords[2], int* nbr_rank) {
     if ((nbr_coords[0] > -1 && nbr_coords[0] < nb_rows)
         && (nbr_coords[1] > -1 && nbr_coords[1] < nb_cols)) {
@@ -64,11 +66,15 @@ void find_nbr_rank(MPI_Comm comm, int nb_rows, int nb_cols, const int nbr_coords
     }
 }
 
+/*
+ * Initialize an environment for MPI by creating a process grid
+ */
 mpi_env_t init_env(void) {
     
     int nb_cpu = 1;
     MPI_Comm_size(MPI_COMM_WORLD, &nb_cpu);
 
+    // Calculate an acceptable grid for available process
     int factor = (int)sqrt(nb_cpu);
     int nb_rows = factor, nb_cols = ceil(nb_cpu / factor);
     int nb_procs = nb_rows * nb_cols;
@@ -80,11 +86,12 @@ mpi_env_t init_env(void) {
         nb_procs = nb_rows * nb_cols;
     }
 
-    if (nb_cpu > nb_procs) {
+    if (nb_cpu > nb_procs) { // can fail to create the grid
         printf("%d process will not fit in a [%d x %d] grid!\n", nb_cpu, nb_rows, nb_cols);
         exit(4);
     }
 
+    // create the layout in MPI
     int dims[2] = { nb_rows, nb_cols };
     MPI_Dims_create(nb_procs, 2, dims);
 
@@ -93,6 +100,7 @@ mpi_env_t init_env(void) {
     MPI_Comm grid_comm;
     MPI_Cart_create(MPI_COMM_WORLD, 2, dims, periods, REORDER_ALLOWED, &grid_comm);
 
+    // setup the environment
     mpi_env_t env;
     env.types = create_types();
 
@@ -108,6 +116,7 @@ mpi_env_t init_env(void) {
         //printf("Init %d procs on a [%d x %d] grid\n", nb_procs, nb_rows, nb_cols);
     }
 
+    // calculate the rank of neighbours around
     int nbrs_coords[3][3][2];
     for (auto i = 0; i < 3; ++i) {
         for (auto j = 0; j < 3; ++j) {
@@ -116,19 +125,7 @@ mpi_env_t init_env(void) {
             find_nbr_rank(env.grid_comm, nb_rows, nb_cols, nbrs_coords[i][j], &env.nbrs[i][j]);
         }
     }
-
-    if (env.rank == ROOT_RANK) {
-        //printf("Me (0,0) with rank %d\n", env.rank);
-
-        for (auto i = 0; i < 3; ++i) {
-            for (auto j = 0; j < 3; ++j) {
-                int rank = env.nbrs[i][j];
-                if (rank == NO_NBR || rank == ROOT_RANK) continue;
-               // printf("Nbr (%d,%d) with rank %d\n", x - 1 + i, y - 1 + j, rank);
-            }
-        }
-    }
-
+   
     return env;
 }
 
