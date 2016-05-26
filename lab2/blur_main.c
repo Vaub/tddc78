@@ -8,11 +8,6 @@
 #include "image.h"
 #include "blur_filter.h"
 
-#define min(a, b)               \
-   ({ __typeof__ (a) _a = (a); \
-      __typeof__ (b) _b = (b); \
-      _a <= _b ? _a : _b; })
-
 typedef struct thread_data {
     int offset, nb_pix_to_treat, row_length;
     const Filter *filter;
@@ -100,55 +95,47 @@ void* do_blur_pass(void* args){
     pthread_exit(NULL);
 }
 
-
-void blur(const Filter *filter, const int nb_threads, const Image *image, 
-	  Pixel *work_buffer){
-    
-
+void blur(const Filter *filter, const int nb_threads, const int image_size,
+	   const int row_length, Pixel *work_buffer, Pixel *output){
+	
     pthread_t threads[nb_threads];
     ThreadData data[nb_threads];
-
-    const int image_size = image->width * image->height;
+    
     const int avg_chunk_size = image_size / nb_threads;
+    
     int chunk_reminder = image_size % nb_threads;
+    int offset = 0;
+    
+    for (int i = 0; i < nb_threads; ++i) {
+      int nb_pix_to_treat = avg_chunk_size + (chunk_reminder > 0 ? 1 : 0);
+      chunk_reminder--;
 
+      ThreadData data_to_process = { offset, nb_pix_to_treat, row_length, 
+					  filter, work_buffer, output };
+      data[i] = data_to_process;
+      pthread_create(&threads[i], NULL, do_blur_pass, (void*)&data[i]);
+
+      offset += nb_pix_to_treat;
+    }
+    
+    for (int i = 0; i < nb_threads; ++i) {
+      pthread_join(threads[i], NULL);
+    }
+}
+
+void blur_image(const Filter *filter, const int nb_threads, const Image *image, 
+	  Pixel *work_buffer){
+    
+    const int image_size = image->width * image->height;
     Pixel* output = malloc(image_size * sizeof(*output));
 
-    int offset = 0;   
-    for (int i = 0; i < nb_threads; ++i) {
-        int nb_pix_to_treat = avg_chunk_size
-                              + (chunk_reminder > 0 ? 1 : 0);
-        chunk_reminder--;
-
-	ThreadData data_to_process = { offset, nb_pix_to_treat, image->width, 
-				       filter, work_buffer, output };
-	data[i] = data_to_process;
-        pthread_create(&threads[i], NULL, do_blur_pass, (void*)&data[i]);
-
-	offset += nb_pix_to_treat;
-    }
-    for (int i = 0; i < nb_threads; ++i) {
-        pthread_join(threads[i], NULL);
-    }
-
+    // Blur pass for X
+    blur(filter, nb_threads, image_size, image->width, work_buffer, output);
+    
     flip_axis(image->width, image->height, output, work_buffer);
 
-    offset = 0;   
-    for (int i = 0; i < nb_threads; ++i) {
-        int nb_pix_to_treat = avg_chunk_size
-                              + (chunk_reminder > 0 ? 1 : 0);
-        chunk_reminder--;
-
-	ThreadData data_to_process = { offset, nb_pix_to_treat, image->height, 
-				       filter, work_buffer, output };
-	data[i] = data_to_process;
-        pthread_create(&threads[i], NULL, do_blur_pass, (void*)&data[i]);
-
-	offset += nb_pix_to_treat;
-    }
-    for (int i = 0; i < nb_threads; ++i) {
-        pthread_join(threads[i], NULL);
-    }
+    // Blur pass for Y
+    blur(filter, nb_threads, image_size, image->height, work_buffer, output);
 
     flip_axis(image->height, image->width, output, work_buffer);
 }
@@ -167,10 +154,12 @@ int main(int argc, char** argv) {
     get_gauss_weights(filter.radius, filter.weights);
 
     nb_threads = atoi(argv[1]);
+    if (nb_threads < 1) {
+        fprintf(stderr, "Needs at least 1 thread\n");
+        exit(1);
+    }
 
-    blur(&filter, nb_threads, &image, work_buffer);
-
-    //flip axis?
+    blur_image(&filter, nb_threads, &image, work_buffer);
 
     if(write_ppm (argv[4], image.width, image.height, (char *)work_buffer) != 0) {
         exit(1);
