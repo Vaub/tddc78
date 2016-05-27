@@ -4,9 +4,10 @@ int get_img_size(const Image* img) {
     return img->width * img->height;
 }
 
-void do_blur_pass(const Pixel *buffer,
-                  const ImageChunk *chunk, const Filter *filter,
-                  const int row_length, Pixel *output) {
+unsigned long do_blur_pass(const Pixel *buffer,
+                 	   const ImageChunk *chunk, const Filter *filter,
+                 	   const int row_length, Pixel *output) {
+    unsigned long flop = 0;
     double r,g,b,n,w;
 
     int output_idx = 0;
@@ -22,6 +23,7 @@ void do_blur_pass(const Pixel *buffer,
         g = w * buffer[i].g;
         b = w * buffer[i].b;
         n = w;
+	flop += 3;
 
         // For this "row", apply the filter
         for (int wi = 1; wi < filter->radius; ++wi) {
@@ -33,6 +35,7 @@ void do_blur_pass(const Pixel *buffer,
                 g += w * buffer[i - wi].g;
                 b += w * buffer[i - wi].b;
                 n += w;
+		flop += 7;
             }
 
             pos2 = pos + wi;
@@ -41,6 +44,7 @@ void do_blur_pass(const Pixel *buffer,
                 g += w * buffer[i + wi].g;
                 b += w * buffer[i + wi].b;
                 n += w;
+		flop += 7;
             }
 
         }
@@ -48,4 +52,6 @@ void do_blur_pass(const Pixel *buffer,
         Pixel pix = { r / n, g / n, b /n };
         output[output_idx++] = pix;
     }
+
+    return flop; 
 }

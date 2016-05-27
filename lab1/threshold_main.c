@@ -62,9 +62,11 @@ void send_chunk_sizes(const int image_size, int *chunk_sizes, int *offsets, int 
     MPI_Recv(local_chunk_size, 1, MPI_INT, 0, 1, env.comm, MPI_STATUS_IGNORE);
 }
 
-void do_thresholding(const int image_size, Pixel *work_buffer, Pixel *output) {
+unsigned long do_thresholding(const int image_size, Pixel *work_buffer, Pixel *output) {
     MpiEnv env = *get_env();
     int local_chunk_size;
+
+    unsigned long flop = 0;
 
     // MPI Scatter/Gather counts & displacements
     int chunk_sizes[env.nb_cpu];
@@ -83,17 +85,23 @@ void do_thresholding(const int image_size, Pixel *work_buffer, Pixel *output) {
     // Sum r,g and b values locally
     for (int i = 0; i < local_chunk_size; ++i) {
         local_sum += (unsigned int) (local_chunk_buffer[i].r + local_chunk_buffer[i].g + local_chunk_buffer[i].b);
+	flop += 3;
     }
 
     // Combine all local sums and send the result to all processes
     MPI_Allreduce(&local_sum, &global_sum, 1, MPI_UNSIGNED, MPI_SUM, env.comm);
 
     threshold = global_sum / image_size;
+    flop += 1;
+
     thresfilter(threshold, local_chunk_size, local_chunk_buffer, pass_output);
+    flop += 3 * local_chunk_size;
 
     MPI_Gatherv(pass_output, local_chunk_size, env.types.pixel,
                 output, chunk_sizes, offsets, env.types.pixel,
                 ROOT_RANK, env.comm);
+
+    return flop;
 }
 
 
@@ -119,7 +127,10 @@ int main(int argc, char **argv) {
     int image_size = get_img_size(&image);
     Pixel *output = malloc(image_size * sizeof(*output));
 
-    do_thresholding(image_size, work_buffer, output);
+    unsigned long flop = do_thresholding(image_size, work_buffer, output);
+
+    unsigned long global_flop = 0;
+    MPI_Reduce(&flop, &global_flop, 1, MPI_UNSIGNED_LONG, MPI_SUM, ROOT_RANK, env.comm); 
 
     // Writing program output (filtered image)
     if (env.rank == ROOT_RANK) {
@@ -127,6 +138,7 @@ int main(int argc, char **argv) {
 
         printf("%d,%1.2f,%d\n",
                env.nb_cpu, t_end - t_start, image_size);
+	printf("FLOP: %ld\n",global_flop);
         if (write_ppm(argv[2], image.width, image.height, (char *) output) != 0) {
             exit_program(1);
         }

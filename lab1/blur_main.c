@@ -64,11 +64,14 @@ void open_image(int argc, char **argv, Image *image, Filter *filter, Pixel *buff
  *      y coord: buffer is layed out using the columns and row_size = height
  *
  *  A full gaussian filter will require an x and y pass to work
+ *
+ *  LAB ONLY : returns the number of flop
  */
-void distribute_image(Pixel *buffer, const int buffer_size,
-                      const int row_size, const Filter *filter,
-                      Pixel *output) {
+unsigned long distribute_image(Pixel *buffer, const int buffer_size,
+                     	      const int row_size, const Filter *filter,
+                     	      Pixel *output) {
     MpiEnv env = *get_env();
+    unsigned long flop = 0;
 
     ImageChunk local_chunk;
     int local_chunk_size;
@@ -141,15 +144,18 @@ void distribute_image(Pixel *buffer, const int buffer_size,
 
     // Parallel blur
     Pixel *pass_output = malloc(local_chunk.nb_pix_to_treat * sizeof(*pass_output));
-    do_blur_pass(local_chunk_buffer, &local_chunk, filter, row_size, pass_output);
+    flop += do_blur_pass(local_chunk_buffer, &local_chunk, filter, row_size, pass_output);
 
     MPI_Gatherv(pass_output, local_chunk.nb_pix_to_treat, env.types.pixel,
                 output, to_receive_chunk_sizes, to_receive_offsets, env.types.pixel,
                 ROOT_RANK, env.comm);
+
+    return flop;
 }
 
 int main(int argc, char **argv) {
     init_mpi(argc, argv);
+    unsigned long flop = 0;
 
     MpiEnv env = *get_env();
     Pixel *work_buffer = NULL;
@@ -187,7 +193,7 @@ int main(int argc, char **argv) {
     }
 
     // Blur pass for X
-    distribute_image(work_buffer, image_size, image.width, &filter, x_pass_buffer);
+    flop += distribute_image(work_buffer, image_size, image.width, &filter, x_pass_buffer);
     if (env.rank == ROOT_RANK) {
         flip_axis(image.width, image.height, x_pass_buffer, y_flip_output);
 
@@ -196,7 +202,7 @@ int main(int argc, char **argv) {
     }
 
     // Blur pass for Y
-    distribute_image(y_flip_output, image_size, image.height, &filter, y_pass_buffer);
+    flop += distribute_image(y_flip_output, image_size, image.height, &filter, y_pass_buffer);
     if (env.rank == ROOT_RANK) {
         //free(y_flip_output);
         x_flip_output = malloc(image_size * sizeof(*x_flip_output));
@@ -206,12 +212,16 @@ int main(int argc, char **argv) {
         //free(y_pass_buffer);
     }
 
+    unsigned long total_flop = 0;
+    MPI_Reduce(&flop, &total_flop, 1, MPI_UNSIGNED_LONG, MPI_SUM, ROOT_RANK, env.comm);
+
     // Writing program output (filtered image)
     if (env.rank == ROOT_RANK) {
         t_end = MPI_Wtime();
 
         printf("%d,%1.2f,%d,%d\n",
                env.nb_cpu, t_end - t_start, filter.radius, image_size);
+	printf("FLOP: %ld\n",total_flop);
         if (write_ppm(argv[3], image.width, image.height, (char *) x_flip_output) != 0) {
             exit_program(1);
         }

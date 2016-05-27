@@ -65,7 +65,8 @@ int main(int argc, char *argv[]) {
 
     MPI_Init(&argc, &argv);
     env = init_env();
-        
+
+    // Reading console parameters
     int nb_particles_cpu = argc > 1 ? atoi(argv[1]) : NB_PARTICLES;
     float box_width = BOX_DEFAULT, box_height = BOX_DEFAULT;
     if (argc == 4) {
@@ -90,6 +91,7 @@ int main(int argc, char *argv[]) {
     int64_t particle_bounds[2] = { 0, MAX_NO_PARTICLES };
     VT_countdef("Particles", vt_class, VT_COUNT_INTEGER64, VT_ME, particle_bounds, "p", &vt_particle_counter);    
 
+    // Creating local "block" and walls
     float block_width = (float) ceil(box_width / (float) env.grid_size[0]);
     float block_height = (float) ceil(box_height / (float) env.grid_size[1]);
 
@@ -131,6 +133,7 @@ int main(int argc, char *argv[]) {
             VT_enter(vt_g_collisions, VT_NOSCL);
             for (auto with = std::next(current); with != particles.end() && !has_collided;) {
                 float collided_at = collide(&current->pcord, &with->pcord);
+
                 if (collided_at == -1) {
                     ++with;
                     continue;
@@ -166,6 +169,9 @@ int main(int argc, char *argv[]) {
 
             i++;
         }
+	
+	// Safety net, we do not want new requests until everyone has read the last pass
+	MPI_Barrier(env.grid_comm);
 
 	// Prepare the communication to neighbours
         int sent = 0;
@@ -200,15 +206,13 @@ int main(int argc, char *argv[]) {
     double t_end = MPI_Wtime();
     if(env.rank == ROOT_RANK){
         pressure /= (NB_STEPS * (2 * (box_width + box_height)));
-	printf("Procs,Time,p,V,n,R,T\n");
+	printf("Procs,Time,p,V,n\n");
 	
 	// calculate a kind of pV=nRT to test results
 	double p = pressure;
 	double V = box_width * box_height;
 	int n = total_particles;
-	double R = 8.314; // const
-	double T = (p*V)/(n*R);
-	printf("%d,%f,%f,%f,%d,%f,%f\n",env.nb_cpu,t_end-t_start,p,V,n,R,T);
+	printf("%d,%f,%f,%f,%d\n",env.nb_cpu,t_end-t_start,p,V,n);
     }
 
     quit_env();
