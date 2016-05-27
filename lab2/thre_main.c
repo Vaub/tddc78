@@ -19,6 +19,10 @@ typedef struct ThresholdThreadData {
     Pixel* buffer;
 } ThreadData;
 
+/**
+ * Increments the global sum by the specified value.
+ * (Only one thread at a time can modify the global sum)
+ */
 void increment_global_sum(unsigned int value) {
     pthread_mutex_lock(&sum_mut);
     global_sum += value;
@@ -33,17 +37,20 @@ void* calculate_threshold(void* args) {
     int image_size = data->image_size;
     Pixel* buffer = data->buffer;
 
+    // sum locally the r,g and b values
     unsigned int local_sum = 0;
     for (int i = from; i < from + size; ++i) {
         local_sum += (unsigned int)buffer[i].r + (unsigned int)buffer[i].g + (unsigned int)buffer[i].b;
     }
 
     increment_global_sum(local_sum);
+    
+    // wait until all threads have incremented the global sum
     wait_for_process(&sum_barrier);
 
-    //printf("Process gone from barrier, %d\n", from);
     unsigned int average = global_sum / image_size;
 
+    // calculate threshold
     for (int i = from; i < from + size; ++i) {
         unsigned int current_pixel = (unsigned int)buffer[i].r + (unsigned int)buffer[i].g + (unsigned int)buffer[i].b;
         buffer[i].r = buffer[i].g = buffer[i].b = (unsigned char)(average > current_pixel ? 0 : 255);
@@ -89,10 +96,13 @@ int main(int argc, char** argv) {
 
     int current_offset = 0;
     for (int i = 0; i < nb_threads; ++i) {
+      
+	// number of pixels to treat
         int chunk_size = avg_chunk_size
                          + (reminder > 0 ? 1 : 0);
         reminder--;
 
+	// data which is passed to the thread
         ThreadData cpu_data = { current_offset, chunk_size, size, buffer };
         data[i] = cpu_data;
 
@@ -100,6 +110,7 @@ int main(int argc, char** argv) {
         current_offset += chunk_size;
     }
 
+    // wait until all threads have finished to modify the image
     for (int i = 0; i < nb_threads; ++i) {
         pthread_join(threads[i], NULL);
     }
@@ -110,11 +121,9 @@ int main(int argc, char** argv) {
     exec_time = (stop.tv_sec - start.tv_sec) + 
 		(double)((stop.tv_nsec - start.tv_nsec) / (double)BILLION); //Add nano seconds
 		  
-    
     printf("%d,%1f,%d\n",
                nb_threads, exec_time, size);
 
-    //printf("Writing output file\n");
     if(write_ppm (argv[3], width, height, (char *)buffer) != 0) {
         exit(1);
     }
