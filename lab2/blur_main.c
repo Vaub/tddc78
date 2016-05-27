@@ -36,6 +36,12 @@ void read_image(int argc, char **argv, Image *image, int* radius, Pixel *buffer)
     }
 }
 
+/**
+ * Flips an image from x <-> y in memory
+ * For example, for w = 3, h = 4 and layed out as row:
+ *      flip_axis(w, h, 000 100 110 101, out) =>
+ *          out = 0111 0010 0001
+ */
 void flip_axis(const int row_size, const int column_size, const Pixel *buffer, Pixel *out) {
     const int buffer_size = row_size * column_size;
     for (int i = 0; i < buffer_size; ++i) {
@@ -110,17 +116,23 @@ void blur(const Filter *filter, const int nb_threads, const int image_size,
     int offset = 0;
     
     for (int i = 0; i < nb_threads; ++i) {
+      
+      // number of pixels that will be blurred
       int nb_pix_to_treat = avg_chunk_size + (chunk_reminder > 0 ? 1 : 0);
+      
       chunk_reminder--;
 
+      // data which is passed to the thread
       ThreadData data_to_process = { offset, nb_pix_to_treat, row_length, 
 					  filter, work_buffer, output };
       data[i] = data_to_process;
+      
       pthread_create(&threads[i], NULL, do_blur_pass, (void*)&data[i]);
 
       offset += nb_pix_to_treat;
     }
     
+    // wait until all threads have finished to do the blur pass
     for (int i = 0; i < nb_threads; ++i) {
       pthread_join(threads[i], NULL);
     }
@@ -184,6 +196,5 @@ int main(int argc, char** argv) {
         exit(1);
     }
 
-    //printf("Number of threads: %d\n", nb_threads);
     return 0;
 }
