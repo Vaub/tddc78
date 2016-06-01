@@ -1,5 +1,5 @@
 #include "image.h"
-#include "filters/ppmio.h"
+#include "ppmio.h"
 
 #include <stdio.h>
 //#include "filters/ppmio.h"
