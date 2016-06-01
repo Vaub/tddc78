@@ -4,8 +4,8 @@
 #include <stdio.h>
 #include <time.h>
 
-#include "filters/gaussw.h"
-#include "filters/ppmio.h"
+#include "gaussw.h"
+#include "ppmio.h"
 #include "image.h"
 #include "blur_filter.h"
 

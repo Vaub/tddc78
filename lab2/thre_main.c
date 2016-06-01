@@ -6,7 +6,7 @@
 
 #include "image.h"
 #include "pthread_barrier.h"
-#include "filters/ppmio.h"
+#include "ppmio.h"
 
 #define BILLION  1000000000L
 

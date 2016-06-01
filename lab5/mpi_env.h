@@ -2,7 +2,7 @@
 #define LAB5_MPI_ENV_H
 
 #include <mpi.h>
-#include "VT.h"
+//#include "VT.h"
 
 #define REORDER_ALLOWED 1
 

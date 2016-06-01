@@ -1,4 +1,4 @@
-cmake_minimum_required(VERSION 3.5)
+cmake_minimum_required(VERSION 2.7)
 project(lab5)
 
 find_package(MPI)
@@ -7,8 +7,7 @@ set(VT_LIBRARIES "")
 if (${CMAKE_CXX_COMPILER} MATCHES "mpiicpc.*$")
     set(MPI_COMP_FLAGS -Nmpi)
     set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -tcollect -trace -I$ENV{VT_ROOT}/include")
-    
-    #set(VT_LIBRARIES "-L$ENV{VT_LIB_DIR} -lVT $ENV{VT_ADD_LIBS}")
+    set(VT_LIBRARIES "-L$ENV{VT_LIB_DIR} -lVT $ENV{VT_ADD_LIBS}")
 else ()
     set(MPI_COMP_FLAGS "")
 endif ()

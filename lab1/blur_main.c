@@ -4,8 +4,8 @@
 
 #include "blur_filter.h"
 #include "mpi_env.h"
-#include "filters/gaussw.h"
-#include "filters/ppmio.h"
+#include "gaussw.h"
+#include "ppmio.h"
 
 #define min(a, b)              \
    ({ __typeof__ (a) _a = (a); \

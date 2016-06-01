@@ -56,7 +56,7 @@ mpi_types_t create_types(void) {
 /*
  * Find neighbourg rank from its coordinate, -1 if no neighbours
  */
-void find_nbr_rank(MPI_Comm comm, int nb_rows, int nb_cols, const int nbr_coords[2], int* nbr_rank) {
+void find_nbr_rank(MPI_Comm comm, int nb_rows, int nb_cols, int nbr_coords[2], int* nbr_rank) {
     if ((nbr_coords[0] > -1 && nbr_coords[0] < nb_rows)
         && (nbr_coords[1] > -1 && nbr_coords[1] < nb_cols)) {
         MPI_Cart_rank(comm, nbr_coords, nbr_rank);

@@ -15,8 +15,8 @@ set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -Wall -Werror ${MPI_COMP_FLAGS} -g -O0 -std=
 # include_directories(filters)
 include_directories(SYSTEM ${MPI_INCLUDE_PATH})
 
-set(SOURCE_FILES types.c mpi_env.c filters/ppmio.c)
-set(BLUR_FILES blur_main.c blur_filter.c filters/gaussw.c)
+set(SOURCE_FILES types.c mpi_env.c ppmio.c)
+set(BLUR_FILES blur_main.c blur_filter.c gaussw.c)
 set(THRE_FILES threshold_main.c threshold_filter.c blur_filter.c)
 
 set(COMMON_LIBS m pthread)

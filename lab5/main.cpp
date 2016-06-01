@@ -7,7 +7,7 @@
 #include "definitions.h"
 #include "mpi_env.h"
 
-#include <VT.h>
+//#include <VT.h>
 
 #define NB_PARTICLES 100
 #define NB_STEPS 1000
@@ -81,15 +81,15 @@ int main(int argc, char *argv[]) {
 	exit(4);
     }
 
-    int vt_error = 0;//VT_initialize(&argc, &argv);
+    //int vt_error = 0;//VT_initialize(&argc, &argv);
    
-    int vt_class, vt_particle_counter, vt_g_collisions, vt_g_comms;
-    int class_err = VT_classdef("Simulation", &vt_class);
+    //int vt_class, vt_particle_counter, vt_g_collisions, vt_g_comms;
+    //int class_err = VT_classdef("Simulation", &vt_class);
     //printf("VT: %d %d\n", vt_error, class_err);
 
-    int func_err = VT_funcdef("Collisions", vt_class, &vt_g_collisions);   
-    int64_t particle_bounds[2] = { 0, MAX_NO_PARTICLES };
-    VT_countdef("Particles", vt_class, VT_COUNT_INTEGER64, VT_ME, particle_bounds, "p", &vt_particle_counter);    
+    //int func_err = VT_funcdef("Collisions", vt_class, &vt_g_collisions);
+    //int64_t particle_bounds[2] = { 0, MAX_NO_PARTICLES };
+    //VT_countdef("Particles", vt_class, VT_COUNT_INTEGER64, VT_ME, particle_bounds, "p", &vt_particle_counter);
 
     // Creating local "block" and walls
     float block_width = (float) ceil(box_width / (float) env.grid_size[0]);
@@ -97,11 +97,11 @@ int main(int argc, char *argv[]) {
 
     cord_t block = {
             .x0 = block_width * env.coords[0],
-            .y0 = block_height * env.coords[1],
             .x1 = ((block_width * env.coords[0]) + block_width),
+            .y0 = block_height * env.coords[1],
             .y1 = ((block_height * env.coords[1]) + block_height)
     };
-    cord_t wall = {.x0 = 0, .y0 = 0, .x1 = box_width, .y1 = box_height};
+    cord_t wall = {.x0 = 0, .x1 = box_width, .y0 = 0, .y1 = box_height};
 
     // Init particles with random positions and velocity
     std::list<particle_t> particles((size_t)nb_particles_cpu);
@@ -130,7 +130,7 @@ int main(int argc, char *argv[]) {
             bool has_collided = false;
 
             // check collisions
-            VT_enter(vt_g_collisions, VT_NOSCL);
+            //VT_enter(vt_g_collisions, VT_NOSCL);
             for (auto with = std::next(current); with != particles.end() && !has_collided;) {
                 float collided_at = collide(&current->pcord, &with->pcord);
 
@@ -145,7 +145,7 @@ int main(int argc, char *argv[]) {
                 particles.erase(with);
                 has_collided = true;
             }
-	    VT_end(vt_g_collisions);
+	        //VT_end(vt_g_collisions);
 
             // move particles which have not collided
             if (!has_collided) {
@@ -189,8 +189,8 @@ int main(int argc, char *argv[]) {
         std::vector<particle_t> new_particles = receive_from_neighbours(FLAG_NEW_PARTICLES, env);
         particles.insert(particles.end(), new_particles.begin(), new_particles.end());
 	
-	int nb_particles = particles.size();
-	VT_countval(1, &vt_particle_counter, &nb_particles);
+	    //int nb_particles = (int)particles.size();
+	    //VT_countval(1, &vt_particle_counter, &nb_particles);
 
         //printf("[%d] \t Received %d particles, sent %d, now with %d total\n",
         //       env.rank, (int)new_particles.size(), sent, (int)particles.size());
@@ -217,7 +217,7 @@ int main(int argc, char *argv[]) {
 
     quit_env();
     MPI_Finalize();
-    VT_finalize();
+    //VT_finalize();
 
     return 0;
 }

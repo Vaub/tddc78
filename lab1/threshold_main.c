@@ -4,7 +4,7 @@
 
 #include "threshold_filter.h"
 #include "mpi_env.h"
-#include "filters/ppmio.h"
+#include "ppmio.h"
 #include "blur_filter.h"
 
 void exit_program(int code) {
